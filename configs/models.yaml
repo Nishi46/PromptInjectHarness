@@ -1,0 +1,52 @@
+# Model ladder — documentation/sprint_planning.md Appendix A.1.
+# Pin local models by digest (not tag): `ollama list` prints the short ID;
+# `ollama show --modelfile <name>` / the registry manifest has the full sha256.
+# Re-run `ollama list` after any `ollama pull` and update the digest here —
+# tags get republished, digests don't.
+
+tiers:
+  L1:
+    role: "Cheap sanity runs; fast iteration during dev; also runs the guard-model classifier (S2-05) and the quarantined reader (S5-01)."
+    source: ollama
+    model: llama3.2:3b
+    digest: sha256:a80c4f17acd5   # short ID from `ollama list` on 2026-08-16 — replace with full digest before Sprint 1
+    status: pulled
+
+  L2:
+    role: "Primary workhorse — most sweep episodes run here. Also runs the mutation engine (S4-02) and the privileged planner (S5-01)."
+    source: ollama
+    model: null   # TODO: pick and pull an ~7-8B instruct Q4 tool-calling model, e.g. llama3.1:8b or qwen2.5:7b-instruct
+    digest: null
+    status: not_pulled
+
+  L3:
+    role: "Upper local rung; slower, use for headline configs."
+    source: ollama
+    model: null   # TODO: pick and pull an ~12-14B instruct Q4 model
+    digest: null
+    status: not_pulled
+
+  L4:
+    role: "Hosted mid-tier, different vendor."
+    source: google_ai_studio
+    model: gemini-3.5-flash   # current non-preview flash-class model as of 2026-08-16; hosted tiers aren't the reproducibility backbone (that's the local/digest-pinned track), so fine to bump when it's deprecated
+    api_key_env: GOOGLE_AI_STUDIO_API_KEY
+    status: key_verified   # HTTP 200 on GET /v1beta/models, 2026-08-16
+
+  L5:
+    role: "Large open-weight; top of the ladder. Non-negotiable for the headline config (Appendix A.5) — anchors the capability/vulnerability curve."
+    source: groq
+    model: llama-3.3-70b-versatile   # confirmed present in GET /v1/models, 2026-08-16
+    api_key_env: GROQ_API_KEY
+    status: key_verified
+
+  L6:
+    role: "Vendor breadth on the headline config only. Appendix A calls this a 'rotating free model' by design — don't hardcode a pick here, just verify the key at signup time."
+    source: openrouter
+    model: null   # TODO: choose per-sweep from the current :free catalog (17 free models available as of 2026-08-16, e.g. google/gemma-4-31b-it:free, nvidia/nemotron-3-nano-30b-a3b:free) — pick for tool-calling support at the time of the sweep, not now
+    api_key_env: OPENROUTER_API_KEY
+    status: key_verified
+
+# Already-pulled local models not currently assigned to a tier (available if L2/L3
+# picks change): llama3.1:latest (4.9GB), llama3.2:1b (1.3GB), llama2:latest (3.8GB),
+# mistral:latest (4.1GB).
