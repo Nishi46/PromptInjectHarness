@@ -1,0 +1,29 @@
+from __future__ import annotations
+
+from injection_pareto.types import CostRecord
+
+# Published list-price rates (USD per 1M tokens), for cost-modeling only.
+# Every model actually used in the $0 execution track (sprint_planning.md
+# Appendix A) runs on a free tier, so real spend is $0 regardless of what
+# this table says — it exists so the trace DB can still report a meaningful
+# $/task figure (e.g. for the Sprint 7 Pareto plot) if a paid tier is ever
+# swapped in. Keyed by the exact model string used in configs/models.yaml;
+# add an entry here whenever a new hosted model is pinned.
+_RATES_PER_MILLION_TOKENS: dict[str, tuple[float, float]] = {
+    "llama-3.3-70b-versatile": (0.59, 0.79),  # Groq
+    "gemini-3.5-flash": (0.075, 0.30),  # Google AI Studio
+}
+
+
+def compute_cost(*, provider: str, model: str, tokens_in: int, tokens_out: int) -> CostRecord:
+    if provider == "ollama":
+        return CostRecord(usd=0.0, tokens_in=tokens_in, tokens_out=tokens_out)
+
+    if model not in _RATES_PER_MILLION_TOKENS:
+        raise ValueError(
+            f"No published rate for model {model!r} (provider={provider!r}); "
+            "add it to _RATES_PER_MILLION_TOKENS in clients/costs.py."
+        )
+    rate_in, rate_out = _RATES_PER_MILLION_TOKENS[model]
+    usd = (tokens_in / 1_000_000) * rate_in + (tokens_out / 1_000_000) * rate_out
+    return CostRecord(usd=usd, tokens_in=tokens_in, tokens_out=tokens_out)

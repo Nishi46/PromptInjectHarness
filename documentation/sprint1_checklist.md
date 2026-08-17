@@ -41,13 +41,13 @@ Granular sub-steps for each task in Sprint 1 of [sprint_planning.md](sprint_plan
 
 ## S1-04 — Model client wrapper (2.5h) 🔴
 
-- [ ] Define `ModelRequest` (messages, tools, params, seed) and `ModelResponse` (text, tool_calls, tokens_in, tokens_out, wall_ms, raw) dataclasses.
-- [ ] Write a base `ModelClient` protocol/ABC exposing `generate(request) -> ModelResponse`.
-- [ ] Implement `OllamaClient` (covers L1–L3): calls the local Ollama HTTP API, times the call with `time.perf_counter`, and reads token counts from Ollama's response metadata.
-- [ ] Implement one hosted client (start with Groq, since its key is already verified per `configs/models.yaml`) to prove the interface generalizes across vendors.
-- [ ] Write a per-provider $/1K-token cost table (Groq/Gemini/OpenRouter rates; $0 for Ollama) and compute `$` inside the wrapper before returning `ModelResponse`.
-- [ ] Decide and implement the persistence boundary: does the wrapper itself call `insert_cost_record` (S1-03), or does it just return a `CostRecord` for the caller to persist? Write down the choice.
-- [ ] Unit test with HTTP mocked (no real network): confirm `tokens_in`, `tokens_out`, `wall_ms`, and `$` populate correctly for both the Ollama and hosted client.
+- [x] Define `ModelRequest` (messages, tools, params, seed) and `ModelResponse` (text, tool_calls, tokens_in, tokens_out, wall_ms, raw) dataclasses.
+- [x] Write a base `ModelClient` protocol/ABC exposing `generate(request) -> ModelResponse`.
+- [x] Implement `OllamaClient` (covers L1–L3): calls the local Ollama HTTP API, times the call with `time.perf_counter`, and reads token counts from Ollama's response metadata.
+- [x] Implement one hosted client (start with Groq, since its key is already verified per `configs/models.yaml`) to prove the interface generalizes across vendors.
+- [x] Write a per-provider cost table (Groq/Gemini rates, published per-1M-token list price since that's how they're actually quoted; $0 for Ollama) and compute `$` inside the wrapper before returning `ModelResponse`. OpenRouter omitted for now — every L6 pick is explicitly a rotating `:free` model (Appendix A), so there's no stable model string to rate yet; `compute_cost` raises a clear error for any unmapped hosted model rather than silently returning `$0`.
+- [x] Decide and implement the persistence boundary: `ModelClient.generate()` returns a `ModelResponse` carrying its own `CostRecord`, but the client never touches the trace DB — persisting to `cost_record` is the caller's job (the S1-07 adapter, which owns `run_id`/`episode_id`). Documented in `ModelClient`'s docstring.
+- [x] Unit test with HTTP mocked (no real network, fake `requests.Session` injected via constructor): confirm `tokens_in`, `tokens_out`, `wall_ms`, and `$` populate correctly for both the Ollama and Groq client, tool-call parsing for both, and that an unmapped hosted model raises instead of silently costing `$0`.
 
 ## S1-05 — Response cache (2h) 🔴
 
