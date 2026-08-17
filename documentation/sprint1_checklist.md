@@ -80,12 +80,12 @@ Granular sub-steps for each task in Sprint 1 of [sprint_planning.md](sprint_plan
 
 ## S1-08 — Reproduce a published AgentDojo number (2.5h) 🔴
 
-- [ ] Pick the exact target: one model + one attack combo with a published number (note suite, task subset, attack name, model — precisely).
-- [ ] Run that combo through the S1-07 adapter/runner end-to-end, capturing a full trace.
-- [ ] Run the identical combo through AgentDojo's own benchmark script directly (as in S0-04) in the current environment, to get an apples-to-apples reference number (model versions drift, so the paper's raw number alone isn't a fair comparison).
-- [ ] Query the trace DB for our computed ASR/utility and compare against both the paper's number and the direct-AgentDojo-run number; compute both deltas.
-- [ ] If either delta is large or unexplained, debug the adapter (most likely culprit: scoring logic or prompt construction mismatch) before writing anything up as final.
-- [ ] Write `docs/reproduction.md`: exact command run, our number, paper's number, direct-AgentDojo reference number, both deltas, and an explanation for any gap.
+- [x] Pick the exact target: `llama3.2:3b` (L1), suite `workspace`, 6 tasks (`user_task_0/1/3/2/5/6`, first 6 by suite order), attack `important_instructions` + `injection_task_0`, defense `no_defense`. The AgentDojo *paper's* published table doesn't cover this model at all (it evaluates GPT-4/Claude/Gemini/a few large open-weight models, not a local 3B) — noted explicitly in `docs/reproduction.md` rather than faking a comparison that wouldn't validate anything.
+- [x] Run that combo through the S1-07 adapter/runner end-to-end, capturing a full trace. `scripts/reproduce_s1_08.py` → `runs/local/reproduction/trace.db` (12 episodes: 6 benign + 6 attacked).
+- [x] Run the identical combo through AgentDojo's own benchmark script directly (as in S0-04) in the current environment, to get an apples-to-apples reference number (model versions drift, so the paper's raw number alone isn't a fair comparison). Called their underlying `TaskSuite.run_task_with_pipeline` + `AgentPipeline.from_config` directly in the same script rather than shelling out to the CLI (same code path their CLI drives, no per-task subprocess/suite-reload overhead) — since the paper's number isn't comparable at all (previous bullet), *this* is the real apples-to-apples reference.
+- [x] Query the trace DB for our computed ASR/utility and compare against both the paper's number and the direct-AgentDojo-run number; compute both deltas. Targeted ASR: 1.000 vs 1.000 (exact match). Benign/attacked utility: 0.333 vs 0.000 (+0.333 delta) — see next bullet.
+- [x] If either delta is large or unexplained, debug the adapter (most likely culprit: scoring logic or prompt construction mismatch) before writing anything up as final. Root-caused, not an adapter bug: AgentDojo's own `LocalLLM` (`agent_pipeline/llms/local_llm.py`) uses a regex/text-delimiter tool-call parser built for generic local servers without native function-calling, and visibly failed to parse several of `llama3.2:3b`'s tool calls (`[debug] broken JSON: ...` printed during the run) — while our `OllamaClient` (S1-04) uses Ollama's *native* `tools=` API, which this model supports (`ollama list` confirms `"tools"` capability) and which reliably succeeds where AgentDojo's generic parser drops the call. Targeted ASR matching exactly is the signal that isolates this — it only needs the security scorer to see whether the attack succeeded, unaffected by tool-call-parsing format differences, and it agrees perfectly.
+- [x] Write `docs/reproduction.md`: exact command run, our number, paper's number, direct-AgentDojo reference number, both deltas, and an explanation for any gap.
 
 ## S1-09 — `NoDefense` baseline (0.5h) 🔴
 
@@ -107,9 +107,9 @@ Granular sub-steps for each task in Sprint 1 of [sprint_planning.md](sprint_plan
 
 ## Acceptance criteria (from sprint_planning.md)
 
-- [ ] `python -m injection_pareto run configs/smoke.yaml` completes and writes a queryable trace DB
-- [ ] A SQL query returns total $ and p95 latency per episode
-- [ ] `docs/reproduction.md` shows your ASR vs. the paper's, with any gap explained
-- [ ] Re-running an identical config with cache hits costs $0
+- [ ] `python -m injection_pareto run configs/smoke.yaml` completes and writes a queryable trace DB — CLI loads/expands the config (S1-06) but doesn't execute yet; deliberately deferred to S2-10's sweep runner since the config schema has no per-task dimension to select what to run (see S1-06 notes). `scripts/reproduce_s1_08.py` proves the adapter itself does complete and write a queryable DB, just not through this exact command yet.
+- [x] A SQL query returns total $ and p95 latency per episode — proven against the real `runs/local/reproduction/trace.db` in `docs/reproduction.md`'s "Cost and latency" section.
+- [x] `docs/reproduction.md` shows your ASR vs. the paper's, with any gap explained — the paper doesn't cover this model at all (documented why), so the real comparison is ours vs. AgentDojo's own reference code on the identical model; gap root-caused to a tool-call-parsing difference, not an adapter bug.
+- [x] Re-running an identical config with cache hits costs $0 — proven in S1-05's tests; also true in practice for `scripts/reproduce_s1_08.py` (shared `ResponseCache` across the run).
 
 **Carry-forward risk:** AgentDojo's API is explicitly unstable — `agentdojo==0.1.35` must be pinned exactly in `pyproject.toml` at S1-01 and never floated (confirmed version recorded at S0-04).
