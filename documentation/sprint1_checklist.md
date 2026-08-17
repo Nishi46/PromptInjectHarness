@@ -31,13 +31,13 @@ Granular sub-steps for each task in Sprint 1 of [sprint_planning.md](sprint_plan
 
 ## S1-03 — Trace schema: SQLite tables (3h) 🔴
 
-- [ ] Sketch the schema on paper/in a comment first: `run`, `episode`, `step`, `tool_call`, `defense_event`, `cost_record` — columns, primary keys, and foreign keys (episode→run, step→episode, tool_call→step, defense_event→episode or step, cost_record→run/episode).
-- [ ] Decide the indices needed to answer "total $ and p95 latency per episode" efficiently (index `cost_record.episode_id`, `step.episode_id`).
-- [ ] Write `trace/schema.sql` (or equivalent SQLAlchemy models) with all 6 tables, types, and FK constraints, with `PRAGMA foreign_keys = ON` enforced on connect.
-- [ ] Write `trace/db.py`: `connect(path)`, `init_db(conn)` (idempotently creates tables if missing), and a context-manager wrapper for a connection.
-- [ ] Write one insert helper per table (`insert_run`, `insert_episode`, `insert_step`, `insert_tool_call`, `insert_defense_event`, `insert_cost_record`), each returning the new row id.
-- [ ] Write an "episode reconstruction" query/helper joining `step` + `tool_call` + `defense_event` for one `episode_id`, ordered by timestamp.
-- [ ] Manual sanity pass: init a temp DB, insert one fake run/episode/step/tool_call, run the reconstruction query, and eyeball the output before wiring anything real into it.
+- [x] Sketch the schema on paper/in a comment first: `run`, `episode`, `step`, `tool_call`, `defense_event`, `cost_record` — columns, primary keys, and foreign keys (episode→run, step→episode, tool_call→step, defense_event→episode or step, cost_record→run/episode).
+- [x] Decide the indices needed to answer "total $ and p95 latency per episode" efficiently (index `cost_record.episode_id`, `step.episode_id`).
+- [x] Write `trace/schema.sql` (or equivalent SQLAlchemy models) with all 6 tables, types, and FK constraints, with `PRAGMA foreign_keys = ON` enforced on connect.
+- [x] Write `trace/db.py`: `connect(path)`, `init_db(conn)` (idempotently creates tables if missing), and a context-manager wrapper for a connection.
+- [x] Write one insert helper per table (`insert_run`, `insert_episode`, `insert_step`, `insert_tool_call`, `insert_defense_event`, `insert_cost_record`), each returning the new row id.
+- [x] Write an "episode reconstruction" query/helper joining `step` + `tool_call` + `defense_event` for one `episode_id`, ordered by timestamp.
+- [x] Manual sanity pass: init a temp DB, insert one fake run/episode/step/tool_call, run the reconstruction query, and eyeball the output before wiring anything real into it.
 
 ## S1-04 — Model client wrapper (2.5h) 🔴
 

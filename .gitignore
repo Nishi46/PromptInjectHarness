@@ -11,6 +11,8 @@ runs/
 
 # Trace DB + response cache (regenerable, not source)
 *.db
+*.db-wal
+*.db-shm
 *.sqlite
 *.sqlite3
 .cache/
