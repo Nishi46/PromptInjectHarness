@@ -17,11 +17,17 @@ class OllamaClient:
         self,
         model: str,
         *,
+        digest: str | None = None,
         base_url: str = "http://localhost:11434",
         session: requests.Session | None = None,
         timeout_s: float = 300.0,
     ) -> None:
         self.model = model
+        self.digest = digest
+        # Ollama tags get republished (Appendix A.1), so the cache key must
+        # pin the digest when one's known — otherwise a re-tagged model
+        # would silently serve stale cached responses.
+        self.cache_model_id = f"ollama:{model}@{digest}" if digest else f"ollama:{model}"
         self.base_url = base_url.rstrip("/")
         self._session = session or requests.Session()
         self._timeout_s = timeout_s

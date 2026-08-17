@@ -51,12 +51,12 @@ Granular sub-steps for each task in Sprint 1 of [sprint_planning.md](sprint_plan
 
 ## S1-05 — Response cache (2h) 🔴
 
-- [ ] Decide the cache key: canonical-JSON-serialize `(model name + digest, messages, params, seed)` and hash it — canonicalization first, so key order never breaks a cache hit.
-- [ ] Implement a disk-backed content-addressed store (`cache/store.py`): `get(key)` / `put(key, response)`, JSON (de)serializing `ModelResponse`, keyed to a file path under a `.cache/responses/` dir.
-- [ ] Wire the cache into `ModelClient.generate`: check cache before calling the provider; on hit, return the cached response with `$0` cost and `cache_hit=True`; on miss, call the provider, store the result, mark `cache_hit=False`.
-- [ ] Add a `--no-cache` flag/param threaded down into the client call path; decide and implement its exact semantics (skip read only, or skip read+write).
-- [ ] Unit test: identical request issued twice — mock the underlying provider call and assert it fires exactly once (second call is a cache hit).
-- [ ] Unit test: `--no-cache` forces a fresh provider call even when a matching cache entry already exists.
+- [x] Decide the cache key: canonical-JSON-serialize `(model name + digest, messages, params, seed)` and hash it — canonicalization first, so key order never breaks a cache hit. `ModelClient.cache_model_id` carries the model identity (folds in the Ollama digest when known, since tags get republished); `compute_cache_key` in `cache/store.py` does the canonical-JSON + SHA-256 hash.
+- [x] Implement a disk-backed content-addressed store (`cache/store.py`): `get(key)` / `put(key, response)`, JSON (de)serializing `ModelResponse`, keyed to a file path under a `.cache/responses/` dir.
+- [x] Wire the cache into `ModelClient.generate`: check cache before calling the provider; on hit, return the cached response with `$0` cost and `cache_hit=True`; on miss, call the provider, store the result, mark `cache_hit=False`. Implemented as `clients/cached.py`'s `CachedModelClient` — a wrapper that itself satisfies the `ModelClient` protocol, so it composes with any client (Ollama, Groq, future ones) without duplicating cache logic per provider.
+- [x] Add a `--no-cache` flag/param threaded down into the client call path; decide and implement its exact semantics (skip read only, or skip read+write). Decided: skip both — documented in `CachedModelClient`'s docstring. A debug flag silently overwriting a previously cached, reproducible result would undermine the project's digest-pinned reproducibility story, so `--no-cache` never mutates the cache.
+- [x] Unit test: identical request issued twice — mock the underlying provider call and assert it fires exactly once (second call is a cache hit).
+- [x] Unit test: `--no-cache` forces a fresh provider call even when a matching cache entry already exists.
 
 ## S1-06 — Config system (2h) 🟡
 

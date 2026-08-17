@@ -12,7 +12,7 @@ I told you agent security benchmarking was under-served. On the academic side th
 
 | Work | What it is |
 | --- | --- |
-| **AgentDojo** (ETH Zurich, 2024) | The reference benchmark. 97 tasks, 629 security cases, 4 domains (workspace, Slack, banking, travel). Extensible, `pip install agentdojo`. |
+| **AgentDojo** (ETH Zurich, 2024) |The reference benchmark. 97 tasks, 629 security cases, 4 domains (workspace, Slack, banking, travel). Extensible, `pip install agentdojo`. |
 | **InjecAgent** (UIUC, 2024) | 1,054 cases, 17 user tools, 62 attacker tools. ReAct GPT-4 compromised ~24% of the time. |
 | **MCPTox** (2025) | Tool-poisoning against 45 live MCP servers, 353 real tools. |
 | **MCPSecBench**, **AgentDyn**, **AgentLAB** | MCP protocol surfaces, dynamic environments, long-horizon attacks. |

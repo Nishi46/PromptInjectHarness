@@ -23,6 +23,7 @@ class ModelResponse:
     wall_ms: int
     cost: CostRecord
     raw: dict[str, Any]
+    cache_hit: bool = False
 
 
 class ModelClient(Protocol):
@@ -33,6 +34,13 @@ class ModelClient(Protocol):
     before returning. This layer has no knowledge of the trace schema —
     persisting the returned `CostRecord` to `cost_record` is the caller's job
     (e.g. the AgentDojo adapter in S1-07, which owns `run_id`/`episode_id`).
+
+    `cache_model_id` is the model identity string `clients.cached.CachedModelClient`
+    folds into the cache key — implementations should make it specific enough
+    to invalidate on any change that could change the response (e.g. an Ollama
+    digest, not just a floating tag).
     """
+
+    cache_model_id: str
 
     def generate(self, request: ModelRequest) -> ModelResponse: ...

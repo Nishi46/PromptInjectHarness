@@ -25,6 +25,7 @@ class GroqClient:
         timeout_s: float = 300.0,
     ) -> None:
         self.model = model
+        self.cache_model_id = f"groq:{model}"
         self.api_key = api_key or os.environ["GROQ_API_KEY"]
         self.base_url = base_url.rstrip("/")
         self._session = session or requests.Session()
