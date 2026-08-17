@@ -1,0 +1,23 @@
+# Smoke config — proves the harness end-to-end on the smallest possible run:
+# one model, no defense, one suite, benign only (no attack).
+# Model/suite pinned to the exact combo already verified working in S0-04.
+
+name: smoke
+
+models:
+  - id: L1
+    provider: ollama
+    model: llama3.2:3b
+    digest: sha256:a80c4f17acd5
+
+defenses:
+  - no_defense
+
+suites:
+  - workspace
+
+attacks:
+  - null # benign only
+
+output:
+  trace_db: runs/local/smoke/trace.db

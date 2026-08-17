@@ -60,13 +60,13 @@ Granular sub-steps for each task in Sprint 1 of [sprint_planning.md](sprint_plan
 
 ## S1-06 — Config system (2h) 🟡
 
-- [ ] Design the YAML shape for an experiment config: `models`, `defenses`, `suites`, `attacks`, run/output name.
-- [ ] Write `configs/smoke.yaml` as the first concrete instance — single model, `NoDefense` only, one suite/task — this is what the Sprint 1 acceptance-criterion command runs against.
-- [ ] Write `config/schema.py`: typed models (pydantic or dataclasses + manual validation) mirroring the YAML shape, with clear validation-error messages.
-- [ ] Write `config/loader.py`: `load_config(path) -> ExperimentConfig`, expanding the `models × defenses × suites × attacks` cartesian product into a flat list of run specs (full parallel execution is S2-10's job; the loader just needs to produce the list).
-- [ ] Wire the `python -m injection_pareto run <config.yaml>` CLI entrypoint that loads the config and executes the first run spec end-to-end.
-- [ ] Unit test: loading `configs/smoke.yaml` produces the expected `ExperimentConfig`.
-- [ ] Unit test: a config missing a required field raises a clear, typed validation error (not a raw KeyError/AttributeError).
+- [x] Design the YAML shape for an experiment config: `models`, `defenses`, `suites`, `attacks`, run/output name.
+- [x] Write `configs/smoke.yaml` as the first concrete instance — single model, `no_defense` only, one suite, benign-only — this is what the Sprint 1 acceptance-criterion command runs against. Model/suite pinned to the exact combo already verified working in S0-04 (`llama3.2:3b`, `workspace`).
+- [x] Write `config/schema.py`: typed dataclasses (`ModelSpec`, `OutputConfig`, `ExperimentConfig`, `RunSpec`) mirroring the YAML shape, with a `ConfigError` raised with a clear, field-naming message on anything malformed.
+- [x] Write `config/loader.py`: `load_config(path) -> ExperimentConfig`, and `expand_run_specs(config) -> list[RunSpec]` expanding the `models × defenses × suites × attacks` cartesian product into a flat list of run specs (full parallel execution is S2-10's job; this just produces the list).
+- [x] Wire the `python -m injection_pareto run <config.yaml>` CLI entrypoint that loads the config, expands and prints every run spec, then raises a clear `NotImplementedError` naming S1-07 — actually executing a run spec needs the AgentDojo adapter, which doesn't exist yet.
+- [x] Unit test: loading `configs/smoke.yaml` produces the expected `ExperimentConfig`.
+- [x] Unit test: a config missing a required field raises a clear, typed validation error (not a raw KeyError/AttributeError). Covered for three cases: missing top-level field, empty `models` list, and a model entry missing a required field.
 
 ## S1-07 — AgentDojo integration adapter (3h) 🔴
 
