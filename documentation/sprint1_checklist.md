@@ -97,11 +97,11 @@ Granular sub-steps for each task in Sprint 1 of [sprint_planning.md](sprint_plan
 
 ## S1-10 — Unit tests for trace integrity + cost accounting (1.5h) 🟡
 
-- [ ] Test: insert a full episode (`run` → `episode` → `step`s → `tool_call`s → `defense_event`s → `cost_record`s) and confirm the S1-03 reconstruction query returns rows in correct chronological order.
-- [ ] Test: foreign-key constraints are enforced — inserting a `step` with a bogus `episode_id` fails (catches silent orphan rows).
-- [ ] Test: a hand-computed fixture dataset's total `$` and p95 latency per episode matches the SQL aggregation query's output — this directly proves the Sprint 1 "SQL query returns total $ and p95 latency per episode" acceptance criterion.
-- [ ] Test: a cache-hit episode (S1-05) records `$0` in its `cost_record` — ties cache behavior to the trace schema.
-- [ ] Confirm all of the above run automatically under the S1-01 CI workflow's `pytest` step.
+- [x] Test: insert a full episode (`run` → `episode` → `step`s → `tool_call`s → `defense_event`s → `cost_record`s) and confirm the S1-03 reconstruction query returns rows in correct chronological order. Also covers an episode-level defense event (`step_id=None`) landing in `episode_defense_events`, not just per-step ones.
+- [x] Test: foreign-key constraints are enforced — inserting a `step` with a bogus `episode_id` fails (catches silent orphan rows). Covered for both `step` (orphan `episode_id`) and `tool_call` (orphan `step_id`).
+- [x] Test: a hand-computed fixture dataset's total `$` and p95 latency per episode matches the SQL aggregation query's output — this directly proves the Sprint 1 "SQL query returns total $ and p95 latency per episode" acceptance criterion. Fixture of 4 cost records with hand-computed total `$` and a hand-computed linear-interpolation p95, checked against both `cost_summary_by_episode()` and a raw `SUM(usd) ... GROUP BY episode_id`-style SQL query directly.
+- [x] Test: a cache-hit episode (S1-05) records `$0` in its `cost_record` — ties cache behavior to the trace schema. One episode with a real ($0.01) call followed by a cache-hit ($0, `cache_hit=1`) call for the same reasoning; both rows checked directly via SQL.
+- [x] Confirm all of the above run automatically under the S1-01 CI workflow's `pytest` step — `tests/test_trace_integrity.py` needs no fixtures beyond `tmp_path`, so it runs the same as every other test under `pytest` in `.github/workflows/ci.yml`.
 
 ---
 
