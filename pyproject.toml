@@ -40,5 +40,12 @@ disallow_untyped_defs = true
 warn_unused_ignores = true
 warn_redundant_casts = true
 
+[[tool.mypy.overrides]]
+# agentdojo ships no py.typed marker (S1-01 risk note: their API is
+# explicitly unstable) — every value from it is Any, checked at our
+# boundary code instead (adapters/agentdojo_adapter.py).
+module = "agentdojo.*"
+ignore_missing_imports = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

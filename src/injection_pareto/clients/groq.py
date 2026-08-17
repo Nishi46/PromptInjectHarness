@@ -9,7 +9,23 @@ import requests
 
 from injection_pareto.clients.base import ModelRequest, ModelResponse
 from injection_pareto.clients.costs import compute_cost
-from injection_pareto.types import ToolCall
+from injection_pareto.types import Message, ToolCall
+
+
+def _serialize_message(message: Message) -> dict[str, Any]:
+    payload: dict[str, Any] = {"role": message.role, "content": message.content}
+    if message.tool_calls:
+        payload["tool_calls"] = [
+            {
+                "id": tc.id,
+                "type": "function",
+                "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)},
+            }
+            for tc in message.tool_calls
+        ]
+    if message.role == "tool" and message.tool_call_id is not None:
+        payload["tool_call_id"] = message.tool_call_id
+    return payload
 
 
 class GroqClient:
@@ -34,7 +50,7 @@ class GroqClient:
     def generate(self, request: ModelRequest) -> ModelResponse:
         payload: dict[str, Any] = {
             "model": self.model,
-            "messages": [{"role": m.role, "content": m.content} for m in request.messages],
+            "messages": [_serialize_message(m) for m in request.messages],
             **request.params,
         }
         if request.tools:

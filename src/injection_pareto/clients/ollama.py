@@ -7,7 +7,16 @@ import requests
 
 from injection_pareto.clients.base import ModelRequest, ModelResponse
 from injection_pareto.clients.costs import compute_cost
-from injection_pareto.types import ToolCall
+from injection_pareto.types import Message, ToolCall
+
+
+def _serialize_message(message: Message) -> dict[str, Any]:
+    payload: dict[str, Any] = {"role": message.role, "content": message.content}
+    if message.tool_calls:
+        payload["tool_calls"] = [
+            {"function": {"name": tc.name, "arguments": tc.arguments}} for tc in message.tool_calls
+        ]
+    return payload
 
 
 class OllamaClient:
@@ -35,7 +44,7 @@ class OllamaClient:
     def generate(self, request: ModelRequest) -> ModelResponse:
         payload: dict[str, Any] = {
             "model": self.model,
-            "messages": [{"role": m.role, "content": m.content} for m in request.messages],
+            "messages": [_serialize_message(m) for m in request.messages],
             "stream": False,
         }
         if request.tools:

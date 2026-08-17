@@ -6,16 +6,22 @@ from typing import Any, Generic, TypeVar
 
 
 @dataclass
-class Message:
-    role: str
-    content: str
-
-
-@dataclass
 class ToolCall:
     id: str
     name: str
     arguments: dict[str, Any]
+
+
+@dataclass
+class Message:
+    role: str
+    content: str
+    # Present on an assistant turn that requested tool calls, and on the
+    # tool-role message answering one — needed to round-trip a full
+    # multi-turn tool-calling transcript through `ModelClient.generate`
+    # without losing structure (e.g. AgentDojo's agent loop).
+    tool_calls: list[ToolCall] | None = None
+    tool_call_id: str | None = None
 
 
 @dataclass
