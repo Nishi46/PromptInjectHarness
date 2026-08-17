@@ -20,14 +20,14 @@ Granular sub-steps for each task in Sprint 1 of [sprint_planning.md](sprint_plan
 
 ## S1-02 — `Defense` protocol + `DefenseStack` (3h) 🔴
 
-- [ ] Define shared dataclasses/types module (`types.py`): `Message`, `ToolCall`, `ToolResult`, `DefenseContext`, and a `CostRecord`.
-- [ ] Decide and write down the hook contract: what each of the 4 hooks receives, what it may return (pass-through vs. mutated vs. a block/deny verdict), and whether a hook can short-circuit the episode — this decision gates S2-07's tool allowlist later, so get it explicit now.
-- [ ] Write the `Defense` `Protocol` (`defenses/base.py`) with `on_pre_generate`, `on_tool_result`, `on_pre_tool_call`, and `cost()` signatures plus one-line docstrings stating the contract from the previous step.
-- [ ] Implement `DefenseStack`: holds an ordered list of `Defense` instances; each of its own 4 methods iterates the stack in order, threading the (possibly mutated) value through, and stops early on a block verdict.
-- [ ] Implement `DefenseStack.cost()` summing every member defense's `cost()`.
-- [ ] Unit test: two stub defenses appending to a shared list prove hook call order matches stack order.
-- [ ] Unit test: `DefenseStack.cost()` sums correctly across 3+ stub defenses with nonzero costs.
-- [ ] Unit test: a stub defense that returns a block verdict on `on_pre_tool_call` prevents any later defense in the stack from seeing that call.
+- [x] Define shared dataclasses/types module (`types.py`): `Message`, `ToolCall`, `ToolResult`, `DefenseContext`, and a `CostRecord`.
+- [x] Decide and write down the hook contract: what each of the 4 hooks receives, what it may return (pass-through vs. mutated vs. a block/deny verdict), and whether a hook can short-circuit the episode — this decision gates S2-07's tool allowlist later, so get it explicit now.
+- [x] Write the `Defense` `Protocol` (`defenses/base.py`) with `on_pre_generate`, `on_tool_result`, `on_pre_tool_call`, and `cost()` signatures plus one-line docstrings stating the contract from the previous step.
+- [x] Implement `DefenseStack`: holds an ordered list of `Defense` instances; each of its own 4 methods iterates the stack in order, threading the (possibly mutated) value through, and stops early on a block verdict.
+- [x] Implement `DefenseStack.cost()` summing every member defense's `cost()`.
+- [x] Unit test: two stub defenses appending to a shared list prove hook call order matches stack order.
+- [x] Unit test: `DefenseStack.cost()` sums correctly across 3+ stub defenses with nonzero costs.
+- [x] Unit test: a stub defense that returns a block verdict on `on_pre_tool_call` prevents any later defense in the stack from seeing that call.
 
 ## S1-03 — Trace schema: SQLite tables (3h) 🔴
 
