@@ -8,3 +8,14 @@ __pycache__/
 
 # AgentDojo benchmark run output (regenerable, not source)
 runs/
+
+# Trace DB + response cache (regenerable, not source)
+*.db
+*.sqlite
+*.sqlite3
+.cache/
+
+# Build artifacts
+*.egg-info/
+build/
+dist/
