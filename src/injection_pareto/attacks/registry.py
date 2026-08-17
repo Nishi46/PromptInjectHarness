@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from agentdojo.attacks import attack_registry as _agentdojo_attack_registry
 
+import injection_pareto.attacks.families as _families  # noqa: F401 -- registers our own attack families
+
 # Canonical attack-family name (as declared in an experiment config's
 # `attacks:` list, e.g. `attacks: [naive, ignore_previous,
 # important_instructions]`) -> the name AgentDojo's own `load_attack`
@@ -19,15 +21,18 @@ from agentdojo.attacks import attack_registry as _agentdojo_attack_registry
 # building a parallel implementation the adapter would never call.
 #
 # S2-02's two novel families (`context_completion`, `encoding_obfuscation`)
-# don't exist in AgentDojo. They'll be implemented as `BaseAttack` subclasses
-# and registered into that same `ATTACKS` dict via
+# don't exist in AgentDojo. They're implemented as `BaseAttack` subclasses in
+# `attacks/families/` and registered into that same `ATTACKS` dict via
 # `agentdojo.attacks.attack_registry.register_attack` -- the same mechanism
 # AgentDojo's own built-ins use -- so `load_attack` (and this registry) picks
-# them up with no adapter changes. Entries below are added as each lands.
+# them up with no adapter changes. `_families` above is imported purely for
+# that registration side effect.
 _FAMILY_TO_AGENTDOJO_NAME: dict[str, str] = {
     "naive": "direct",
     "ignore_previous": "ignore_previous",
     "important_instructions": "important_instructions",
+    "context_completion": "context_completion",
+    "encoding_obfuscation": "encoding_obfuscation",
 }
 
 
