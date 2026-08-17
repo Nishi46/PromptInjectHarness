@@ -4,7 +4,7 @@ from typing import Any
 from injection_pareto.cache import ResponseCache
 from injection_pareto.clients.base import ModelRequest, ModelResponse
 from injection_pareto.clients.cached import CachedModelClient
-from injection_pareto.types import CostRecord, Message
+from injection_pareto.types import CostRecord, Message, ToolCall
 
 
 class CountingClient:
@@ -91,3 +91,52 @@ def test_cache_key_ignores_dict_key_order(tmp_path: Path) -> None:
 
     assert stub.call_count == 1
     assert result.cache_hit is True
+
+
+def test_cache_key_distinguishes_requests_that_differ_only_in_tool_calls(tmp_path: Path) -> None:
+    """Regression: an assistant turn that issues a tool call typically has
+    empty text `content`, so the cache key must include `tool_calls` or two
+    turns that only differ in which tool was called would collide."""
+    stub = CountingClient()
+    cache = ResponseCache(cache_dir=tmp_path / "responses")
+    client = CachedModelClient(stub, cache)
+
+    base_messages = [
+        Message(role="system", content="be helpful"),
+        Message(role="user", content="go"),
+    ]
+    assistant_a = Message(
+        role="assistant",
+        content="",
+        tool_calls=[ToolCall(id="1", name="send_email", arguments={"to": "a@b.com"})],
+    )
+    assistant_b = Message(
+        role="assistant",
+        content="",
+        tool_calls=[ToolCall(id="1", name="delete_account", arguments={})],
+    )
+
+    client.generate(ModelRequest(messages=[*base_messages, assistant_a]))
+    result = client.generate(ModelRequest(messages=[*base_messages, assistant_b]))
+
+    assert stub.call_count == 2
+    assert result.cache_hit is False
+
+
+def test_cache_key_distinguishes_different_tool_schemas(tmp_path: Path) -> None:
+    """Regression: a defense that changes which tools are available (e.g. an
+    allowlist blocking one) must not be served a cache entry generated
+    against a different tool schema."""
+    stub = CountingClient()
+    cache = ResponseCache(cache_dir=tmp_path / "responses")
+    client = CachedModelClient(stub, cache)
+
+    messages = [Message(role="user", content="hi")]
+    tools_a = [{"type": "function", "function": {"name": "send_email"}}]
+    tools_b = [{"type": "function", "function": {"name": "delete_account"}}]
+
+    client.generate(ModelRequest(messages=messages, tools=tools_a))
+    result = client.generate(ModelRequest(messages=messages, tools=tools_b))
+
+    assert stub.call_count == 2
+    assert result.cache_hit is False

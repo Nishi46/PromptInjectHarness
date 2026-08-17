@@ -35,7 +35,6 @@ class ToolResult:
 class DefenseContext:
     """Shared, read-mostly context passed to every hook call for one episode."""
 
-    episode_id: str | None = None
     task_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 

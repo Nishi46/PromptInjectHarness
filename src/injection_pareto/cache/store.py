@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -16,11 +17,22 @@ def compute_cache_key(
     messages: list[dict[str, Any]],
     params: dict[str, Any],
     seed: int | None,
+    tools: list[dict[str, Any]] | None = None,
 ) -> str:
     """Content-address a request. Canonical JSON (sorted keys, no whitespace)
-    first, so key order in `params`/`messages` never breaks a cache hit."""
+    first, so key order in `params`/`messages`/`tools` never breaks a cache
+    hit. `messages` must already carry `tool_calls`/`tool_call_id` where
+    present — two requests that differ only in prior tool-call structure (or
+    in which tools are available) are different requests and must not
+    collide on the same key."""
     canonical = json.dumps(
-        {"model_id": model_id, "messages": messages, "params": params, "seed": seed},
+        {
+            "model_id": model_id,
+            "messages": messages,
+            "params": params,
+            "seed": seed,
+            "tools": tools,
+        },
         sort_keys=True,
         separators=(",", ":"),
     )
@@ -67,4 +79,11 @@ class ResponseCache:
             "cost": asdict(response.cost),
             "raw": response.raw,
         }
-        self._path(key).write_text(json.dumps(payload))
+        path = self._path(key)
+        # Write-then-rename: a crash or concurrent writer (S2-10's parallel
+        # sweep workers) mid-write must never leave a truncated file that
+        # the next `get()` chokes on — `os.replace` is atomic on the same
+        # filesystem, so readers only ever see a complete file or none.
+        tmp_path = path.with_suffix(f".{os.getpid()}.tmp")
+        tmp_path.write_text(json.dumps(payload))
+        os.replace(tmp_path, path)

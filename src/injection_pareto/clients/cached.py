@@ -1,10 +1,27 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import Any
 
 from injection_pareto.cache.store import ResponseCache, compute_cache_key
 from injection_pareto.clients.base import ModelClient, ModelRequest, ModelResponse
-from injection_pareto.types import CostRecord
+from injection_pareto.types import CostRecord, Message
+
+
+def _message_to_cache_dict(message: Message) -> dict[str, Any]:
+    """Full request-shaping fields only — enough to distinguish requests
+    that must never share a cache entry. An assistant turn that issues a
+    tool call typically has empty `content`, so `tool_calls`/`tool_call_id`
+    must be part of the key or two turns that differ only in which tool
+    was called (or its arguments) would hash identically."""
+    payload: dict[str, Any] = {"role": message.role, "content": message.content}
+    if message.tool_calls:
+        payload["tool_calls"] = [
+            {"id": tc.id, "name": tc.name, "arguments": tc.arguments} for tc in message.tool_calls
+        ]
+    if message.tool_call_id is not None:
+        payload["tool_call_id"] = message.tool_call_id
+    return payload
 
 
 class CachedModelClient:
@@ -29,9 +46,10 @@ class CachedModelClient:
     def generate(self, request: ModelRequest) -> ModelResponse:
         key = compute_cache_key(
             model_id=self._client.cache_model_id,
-            messages=[{"role": m.role, "content": m.content} for m in request.messages],
+            messages=[_message_to_cache_dict(m) for m in request.messages],
             params=request.params,
             seed=request.seed,
+            tools=request.tools,
         )
 
         if not self.no_cache:

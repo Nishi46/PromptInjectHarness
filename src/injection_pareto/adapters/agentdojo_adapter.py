@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from agentdojo.agent_pipeline.agent_pipeline import AgentPipeline, load_system_message
 from agentdojo.agent_pipeline.base_pipeline_element import BasePipelineElement
 from agentdojo.agent_pipeline.basic_elements import InitQuery, SystemMessage
+from agentdojo.agent_pipeline.llms.google_llm import EMPTY_FUNCTION_NAME
 from agentdojo.agent_pipeline.tool_execution import (
     ToolsExecutionLoop,
     ToolsExecutor,
@@ -21,6 +22,7 @@ from agentdojo.logging import Logger
 from agentdojo.task_suite.load_suites import get_suite
 from agentdojo.types import ChatMessage, get_text_content_as_str, text_content_block_from_string
 
+from injection_pareto.attacks.registry import resolve_attack_name
 from injection_pareto.clients.base import ModelClient, ModelRequest, ModelResponse
 from injection_pareto.defenses.stack import DefenseStack
 from injection_pareto.trace.db import (
@@ -112,6 +114,19 @@ class _EpisodeRecorder:
     # pass correlate an event back to its tool call without needing a shared key.
     tool_call_events: list[list[_DefenseEventRecord]] = field(default_factory=list)
 
+    def reset_for_new_attempt(self) -> None:
+        """`TaskSuite.run_task_with_pipeline` retries the whole pipeline up
+        to 3x internally on a malformed/empty final output, each time from a
+        fresh empty transcript — so anything positionally correlated against
+        the *final* transcript (defense events keyed to tool-call position)
+        must be dropped when a new attempt starts, or a discarded attempt's
+        events get attributed to the wrong tool calls in the kept attempt.
+        `model_responses` is deliberately NOT cleared: those API calls really
+        happened and really cost tokens/$, so their cost stays counted even
+        though their content doesn't appear in the final trace."""
+        self.pre_generate_events.clear()
+        self.tool_call_events.clear()
+
 
 class _ModelClientLLM(BasePipelineElement):
     """Bridges our `ModelClient` (cached, cost-tracked — S1-04/S1-05) into
@@ -160,6 +175,14 @@ class _PreGenerateElement(BasePipelineElement):
         messages: Sequence[ChatMessage] = [],
         extra_args: dict = {},
     ) -> tuple[str, FunctionsRuntime, Env, Sequence[ChatMessage], dict]:
+        if len(messages) == 2:
+            # Exactly [system, user] — the state only ever seen at the very
+            # top of a pipeline run (this element sits right after
+            # SystemMessage+InitQuery in `run_episode`'s pipeline list), on
+            # both the real first attempt and every internal AgentDojo retry.
+            # Either way, nothing recorded so far belongs to this attempt.
+            self._recorder.reset_for_new_attempt()
+
         our_messages = _agentdojo_messages_to_ours(messages)
         result = self._defense_stack.on_pre_generate(self._context, our_messages)
         self._recorder.pre_generate_events.append(
@@ -317,7 +340,7 @@ def run_episode(
         if attack_name is None:
             raise ValueError("attack_name is required when injection_task_id is set")
         injection_task = suite.get_injection_task_by_id(injection_task_id)
-        attack = load_attack(attack_name, suite, pipeline)
+        attack = load_attack(resolve_attack_name(attack_name), suite, pipeline)
         injections = attack.attack(user_task, injection_task)
 
     runtime_class = _make_defended_runtime_class(defense_stack, context, recorder)
@@ -341,6 +364,57 @@ def run_episode(
         security=security,
     )
 
+    # ToolsExecutor rejects an empty/unregistered function name before ever
+    # calling `FunctionsRuntime.run_function` (tool_execution.py) — those
+    # calls never reach `recorder.tool_call_events`, so the walk below must
+    # not consume a cursor slot for them.
+    valid_function_names = {fn.name for fn in suite.tools}
+    step_count, tool_call_count = _write_episode_trace(
+        conn,
+        run_id=run_id,
+        episode_id=episode_id,
+        messages=messages,
+        recorder=recorder,
+        defense_name=defense_name,
+        model_name=model_name,
+        valid_function_names=valid_function_names,
+    )
+
+    return EpisodeResult(
+        episode_id=episode_id,
+        utility=utility,
+        security=security,
+        step_count=step_count,
+        tool_call_count=tool_call_count,
+    )
+
+
+def _write_episode_trace(
+    conn: sqlite3.Connection,
+    *,
+    run_id: int,
+    episode_id: int,
+    messages: Sequence[ChatMessage],
+    recorder: _EpisodeRecorder,
+    defense_name: str,
+    model_name: str,
+    valid_function_names: set[str],
+) -> tuple[int, int]:
+    """Walk the final message transcript once and write every
+    step/tool_call/defense_event/cost_record row in a single batched
+    `transaction()`. Returns `(step_count, tool_call_count)`.
+
+    Two things make positional correlation between `recorder.tool_call_events`
+    and the tool calls found here non-trivial, both handled below:
+      - `ToolsExecutionLoop` can hit its `max_iters` cutoff right after the
+        LLM requests a batch of tool calls but before `ToolsExecutor` ever
+        runs them — the transcript ends with an assistant message whose
+        `tool_calls` have no corresponding result messages at all.
+      - `ToolsExecutor` itself rejects an empty/unregistered function name
+        before ever calling `FunctionsRuntime.run_function` — it still
+        appends an error result message, but `recorder.tool_call_events` has
+        no entry for that call, since our runtime never saw it.
+    """
     step_count = 0
     tool_call_count = 0
     with transaction(conn):
@@ -367,22 +441,38 @@ def run_episode(
             advance = 1
             if message["role"] == "assistant":
                 tool_calls = message.get("tool_calls") or []
-                result_messages = messages[i + 1 : i + 1 + len(tool_calls)]
+                result_messages: list[ChatMessage | None] = list(
+                    messages[i + 1 : i + 1 + len(tool_calls)]
+                )
+                if len(result_messages) < len(tool_calls):
+                    result_messages = [None] * len(tool_calls)
+
                 for tc, result_message in zip(tool_calls, result_messages, strict=True):
-                    events = recorder.tool_call_events[tool_call_cursor]
-                    tool_call_cursor += 1
+                    reached_runtime = (
+                        result_message is not None
+                        and tc.function != EMPTY_FUNCTION_NAME
+                        and tc.function in valid_function_names
+                    )
+                    events = recorder.tool_call_events[tool_call_cursor] if reached_runtime else []
+                    if reached_runtime:
+                        tool_call_cursor += 1
                     blocked = any(
                         e.hook == "on_pre_tool_call" and e.verdict == Verdict.BLOCK.value
                         for e in events
                     )
-                    result_content = get_text_content_as_str(result_message.get("content") or [])
+                    result_content = (
+                        get_text_content_as_str(result_message.get("content") or [])
+                        if result_message is not None
+                        else None
+                    )
 
+                    result_json = json.dumps(result_content) if result_content is not None else None
                     tool_call_row_id = insert_tool_call(
                         conn,
                         step_id=step_id,
                         tool_name=tc.function,
                         arguments_json=json.dumps(tc.args),
-                        result_json=json.dumps(result_content),
+                        result_json=result_json,
                         blocked_by_defense=defense_name if blocked else None,
                         timestamp=_now(),
                     )
@@ -434,10 +524,4 @@ def run_episode(
                 timestamp=_now(),
             )
 
-    return EpisodeResult(
-        episode_id=episode_id,
-        utility=utility,
-        security=security,
-        step_count=step_count,
-        tool_call_count=tool_call_count,
-    )
+    return step_count, tool_call_count
