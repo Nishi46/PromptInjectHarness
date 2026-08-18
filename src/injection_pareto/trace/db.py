@@ -106,6 +106,21 @@ def insert_episode(
     return int(cursor.lastrowid)  # type: ignore[arg-type]
 
 
+def update_episode_partial_compromise(
+    conn: sqlite3.Connection, *, episode_id: int, partial_compromise: bool | None
+) -> None:
+    """S2-08: written post-hoc by `scoring/security.py`, after the episode's
+    full trace already exists -- unlike `utility`/`security`, which AgentDojo
+    computes and the adapter inserts immediately, `partial_compromise` needs
+    the completed tool-call trace and AgentDojo's own injection-task
+    ground truth to compute, neither available at `insert_episode` time."""
+    conn.execute(
+        "UPDATE episode SET partial_compromise = ? WHERE id = ?",
+        (None if partial_compromise is None else int(partial_compromise), episode_id),
+    )
+    conn.commit()
+
+
 def insert_step(
     conn: sqlite3.Connection,
     *,

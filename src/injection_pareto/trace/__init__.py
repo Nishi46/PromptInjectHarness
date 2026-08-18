@@ -9,6 +9,7 @@ from injection_pareto.trace.db import (
     insert_tool_call,
     open_db,
     transaction,
+    update_episode_partial_compromise,
 )
 from injection_pareto.trace.queries import (
     EpisodeCostSummary,
@@ -28,6 +29,7 @@ __all__ = [
     "insert_tool_call",
     "insert_defense_event",
     "insert_cost_record",
+    "update_episode_partial_compromise",
     "reconstruct_episode",
     "cost_summary_by_episode",
     "EpisodeTrace",
