@@ -11,6 +11,7 @@ dependencies = [
     "agentdojo==0.1.35",
     "requests>=2.31",
     "pyyaml>=6.0",
+    "tqdm>=4.66",
 ]
 
 [project.optional-dependencies]
@@ -20,6 +21,7 @@ dev = [
     "pytest",
     "types-requests",
     "types-pyyaml",
+    "types-tqdm",
 ]
 
 [tool.hatch.build.targets.wheel]

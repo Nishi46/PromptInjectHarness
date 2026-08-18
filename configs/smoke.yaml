@@ -19,5 +19,9 @@ suites:
 attacks:
   - null # benign only
 
+tasks:
+  workspace:
+    - user_task_0
+
 output:
   trace_db: runs/local/smoke/trace.db

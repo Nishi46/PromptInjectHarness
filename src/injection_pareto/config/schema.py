@@ -41,7 +41,8 @@ class OutputConfig:
 @dataclass
 class ExperimentConfig:
     """One YAML file declaring the `models × defenses × suites × attacks`
-    cartesian product to run. `expand_run_specs` (loader.py) flattens it."""
+    cartesian product to run, plus which tasks each suite runs (S2-10).
+    `expand_run_specs` (loader.py) flattens it."""
 
     name: str
     models: list[ModelSpec]
@@ -49,10 +50,24 @@ class ExperimentConfig:
     suites: list[str]
     attacks: list[str | None]
     output: OutputConfig
+    # Per-suite user-task IDs (S2-10 -- the dimension S1-06 explicitly
+    # deferred). Keyed by suite name since one config can span multiple
+    # suites, each with its own task-ID namespace.
+    tasks: dict[str, list[str]]
+    # Per-suite injection-task ID, used for every non-None attack in that
+    # suite. One representative injection task per suite (not a full
+    # injection-task × attack cross product) is a deliberate simplification
+    # -- Appendix A.2's grid sizing (`6 def × 5 atk × 12 tasks = 360`) only
+    # comes out right under this reading; matches every attack this project
+    # has run against so far (S1-08 through S2-09, all `injection_task_0`).
+    # Optional at the config level -- a benign-only config (e.g.
+    # `configs/smoke.yaml`) never needs it; `expand_run_specs` requires an
+    # entry only for suites actually paired with a non-None attack.
+    injection_tasks: dict[str, str]
 
     @staticmethod
     def from_dict(data: dict[str, Any]) -> ExperimentConfig:
-        required = ("name", "models", "defenses", "suites", "attacks", "output")
+        required = ("name", "models", "defenses", "suites", "attacks", "output", "tasks")
         missing = [k for k in required if k not in data]
         if missing:
             raise ConfigError(
@@ -64,6 +79,9 @@ class ExperimentConfig:
             if not isinstance(value, list) or not value:
                 raise ConfigError(f"config.{field_name} must be a non-empty list")
 
+        if not isinstance(data["tasks"], dict):
+            raise ConfigError("config.tasks must be a mapping of suite name -> list of task IDs")
+
         models = [ModelSpec.from_dict(m, index=i) for i, m in enumerate(data["models"])]
         output = OutputConfig.from_dict(data["output"])
 
@@ -74,14 +92,20 @@ class ExperimentConfig:
             suites=list(data["suites"]),
             attacks=list(data["attacks"]),
             output=output,
+            tasks={suite: list(task_ids) for suite, task_ids in data["tasks"].items()},
+            injection_tasks=dict(data.get("injection_tasks") or {}),
         )
 
 
 @dataclass
 class RunSpec:
-    """One point in the cartesian product: exactly one model/defense/suite/attack."""
+    """One point in the `model × defense × suite × attack` cartesian
+    product, carrying that suite's full task list (S2-10) -- the sweep
+    runner iterates `tasks` to reach every individual episode."""
 
     model: ModelSpec
     defense: str
     suite: str
     attack: str | None
+    tasks: list[str]
+    injection_task: str | None
