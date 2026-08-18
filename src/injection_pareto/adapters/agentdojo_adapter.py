@@ -306,7 +306,6 @@ def run_episode(
     model_client: ModelClient,
     defense_stack: DefenseStack,
     defense_name: str,
-    provider: str,
     model_name: str,
     attack_name: str | None = None,
     benchmark_version: str = BENCHMARK_VERSION,
@@ -332,12 +331,19 @@ def run_episode(
     pipeline = AgentPipeline(
         [SystemMessage(load_system_message(None)), InitQuery(), pre_generate, llm, tools_loop]
     )
-    # AgentDojo's attack loader resolves the victim model's name by substring
-    # match against `pipeline.name` (`agentdojo.models.MODEL_NAMES`), with a
-    # catch-all "local" entry — matching that keeps attacks like
-    # `important_instructions` working for any Ollama-backed model.
-    name_prefix = "local" if provider == "ollama" else provider
-    pipeline.name = f"{name_prefix}-{model_name}-{defense_name}"
+    # AgentDojo's attack loader resolves the "victim model" name by
+    # substring match against `pipeline.name` (`agentdojo.models.MODEL_NAMES`),
+    # which only recognizes specific proprietary vendor model IDs (OpenAI/
+    # Anthropic/Google/Cohere) plus a catch-all "local" entry ("Local
+    # model"). Every provider this project actually supports (ollama, groq
+    # -- both serving open-weight models, not a recognized proprietary
+    # vendor) falls back to that catch-all; found via a real 404 (retired
+    # Groq model, unrelated) that unmasked this: `important_instructions`
+    # resolves the model name eagerly in its own `__init__`, so a pipeline
+    # name AgentDojo can't match raises immediately, for every provider,
+    # not just Groq -- this always defaulting to "local" (rather than the
+    # previous ollama-only special case) is the actual general fix.
+    pipeline.name = f"local-{model_name}-{defense_name}"
 
     injection_task = None
     injections: dict[str, str] = {}

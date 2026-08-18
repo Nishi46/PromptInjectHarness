@@ -1,0 +1,40 @@
+# The 3rd model for S2-11's "3 models" grid: L5 (Groq, openai/gpt-oss-120b —
+# repointed from llama-3.3-70b-versatile, retired from Groq's catalog
+# between the L5 pick and this sweep; see configs/models.yaml's L5 comment),
+# deliberately kept tiny (1 defense × 1 attack × 3 tasks = 3 attacked + 3
+# benign = 6 episodes) rather than the full 6-defense × 5-attack grid run
+# against the local models in `configs/static_sweep.yaml` — Groq's free
+# tier budgets ~30 episodes/day (Appendix A.3); a full grid here would blow
+# that in one run. `no_defense` + `important_instructions` chosen because
+# they're the most-verified combo in the project (S1-08's own reproduction
+# target), giving the cleanest possible cross-vendor signal from a small
+# sample. Writes to the same trace DB as the local sweep.
+
+name: static_sweep_groq_slice
+
+models:
+  - id: L5
+    provider: groq
+    model: openai/gpt-oss-120b
+
+defenses:
+  - no_defense
+
+suites:
+  - workspace
+
+attacks:
+  - null
+  - important_instructions
+
+tasks:
+  workspace:
+    - user_task_0
+    - user_task_1
+    - user_task_3
+
+injection_tasks:
+  workspace: injection_task_0
+
+output:
+  trace_db: runs/local/static_sweep/trace.db

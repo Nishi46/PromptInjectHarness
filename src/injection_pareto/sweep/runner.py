@@ -159,7 +159,6 @@ def _run_point(
                 model_client=client,
                 defense_stack=defense_stack,
                 defense_name=point.spec.defense,
-                provider=point.spec.model.provider,
                 model_name=point.spec.model.model,
                 attack_name=point.spec.attack,
             )

@@ -10,7 +10,13 @@ from injection_pareto.types import CostRecord
 # swapped in. Keyed by the exact model string used in configs/models.yaml;
 # add an entry here whenever a new hosted model is pinned.
 _RATES_PER_MILLION_TOKENS: dict[str, tuple[float, float]] = {
-    "llama-3.3-70b-versatile": (0.59, 0.79),  # Groq
+    # llama-3.3-70b-versatile retired from Groq's catalog between the L5
+    # pick (2026-08-16, configs/models.yaml) and S2-11's sweep (2026-08-18)
+    # -- exactly the hosted-model drift risk Appendix A warns about. L5 was
+    # repointed at openai/gpt-oss-120b (confirmed via a real tool-calling
+    # request against Groq's API on 2026-08-18); rate per Groq's own docs
+    # (console.groq.com/docs/model/openai/gpt-oss-120b).
+    "openai/gpt-oss-120b": (0.15, 0.60),  # Groq
     "gemini-3.5-flash": (0.075, 0.30),  # Google AI Studio
 }
 

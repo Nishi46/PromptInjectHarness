@@ -100,7 +100,6 @@ def run_our_harness(task_ids: list[str]) -> dict[str, float]:
             model_client=client,
             defense_stack=defense_stack,
             defense_name="no_defense",
-            provider=MODEL.provider,
             model_name=MODEL.model,
         )
         benign_utility.append(r.utility)
@@ -115,7 +114,6 @@ def run_our_harness(task_ids: list[str]) -> dict[str, float]:
             model_client=client,
             defense_stack=defense_stack,
             defense_name="no_defense",
-            provider=MODEL.provider,
             model_name=MODEL.model,
             attack_name=ATTACK_NAME,
         )

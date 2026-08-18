@@ -85,7 +85,7 @@ def test_groq_client_populates_tokens_latency_and_nonzero_cost() -> None:
     )
     session = FakeSession(fake_response)
     client = GroqClient(
-        model="llama-3.3-70b-versatile", api_key="test-key", session=session  # type: ignore[arg-type]
+        model="openai/gpt-oss-120b", api_key="test-key", session=session  # type: ignore[arg-type]
     )
 
     result = client.generate(ModelRequest(messages=[Message(role="user", content="hi")]))
@@ -93,7 +93,7 @@ def test_groq_client_populates_tokens_latency_and_nonzero_cost() -> None:
     assert result.text == "hi there"
     assert result.tokens_in == 1000
     assert result.tokens_out == 500
-    expected_usd = (1000 / 1_000_000) * 0.59 + (500 / 1_000_000) * 0.79
+    expected_usd = (1000 / 1_000_000) * 0.15 + (500 / 1_000_000) * 0.60
     assert result.cost.usd == pytest.approx(expected_usd)
     assert result.wall_ms >= 0
     _, kwargs = session.calls[0]
@@ -125,7 +125,7 @@ def test_groq_client_parses_tool_calls_with_json_string_arguments() -> None:
     )
     session = FakeSession(fake_response)
     client = GroqClient(
-        model="llama-3.3-70b-versatile", api_key="test-key", session=session  # type: ignore[arg-type]
+        model="openai/gpt-oss-120b", api_key="test-key", session=session  # type: ignore[arg-type]
     )
 
     result = client.generate(ModelRequest(messages=[Message(role="user", content="hi")]))

@@ -15,9 +15,9 @@ tiers:
   L2:
     role: "Primary workhorse — most sweep episodes run here. Also runs the mutation engine (S4-02) and the privileged planner (S5-01)."
     source: ollama
-    model: null   # TODO: pick and pull an ~7-8B instruct Q4 tool-calling model, e.g. llama3.1:8b or qwen2.5:7b-instruct
-    digest: null
-    status: not_pulled
+    model: llama3.1:latest
+    digest: sha256:46e0c10c039e   # short ID from `ollama list`; confirmed 8B Q4_K_M via `ollama show` on 2026-08-18 (S2-11)
+    status: pulled
 
   L3:
     role: "Upper local rung; slower, use for headline configs."
@@ -36,7 +36,7 @@ tiers:
   L5:
     role: "Large open-weight; top of the ladder. Non-negotiable for the headline config (Appendix A.5) — anchors the capability/vulnerability curve."
     source: groq
-    model: llama-3.3-70b-versatile   # confirmed present in GET /v1/models, 2026-08-16
+    model: openai/gpt-oss-120b   # llama-3.3-70b-versatile (picked 2026-08-16) was fully retired from Groq's catalog by 2026-08-18 (S2-11) -- exactly the hosted-model drift risk Appendix A warns about. Repointed to this 120B open-weight model: confirmed present in GET /v1/models and confirmed real native tool-calling via a live POST /chat/completions request, both 2026-08-18.
     api_key_env: GROQ_API_KEY
     status: key_verified
 

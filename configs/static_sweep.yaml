@@ -1,0 +1,55 @@
+# Sprint 2's static baseline (S2-11): all 6 defenses × all 5 attack families
+# (+ a benign/no-attack pass per defense, for S2-09's utility comparison) ×
+# 2 local models × 3 tasks. Local-only ($0, no shared quota) — the 3rd model
+# from the sprint plan's "3 models" is L5 (Groq), covered separately and
+# deliberately small in `configs/static_sweep_groq_slice.yaml`, since a full
+# 6×5 grid against Groq's free tier would blow its ~30 episodes/day budget
+# (Appendix A.3) in one run. Both write to the same trace DB so S2-12's
+# results table can query everything together.
+#
+# 3 tasks per suite (not Appendix A.2's full "12 stratified") — chosen for
+# a first real static baseline sized to run inside a single session rather
+# than overnight; revisit task count before the final headline sweep.
+
+name: static_sweep
+
+models:
+  - id: L1
+    provider: ollama
+    model: llama3.2:3b
+    digest: sha256:a80c4f17acd5
+  - id: L2
+    provider: ollama
+    model: llama3.1:latest
+    digest: sha256:46e0c10c039e
+
+defenses:
+  - no_defense
+  - spotlighting
+  - instructional_prevention
+  - guard_model
+  - canary
+  - tool_allowlist
+
+suites:
+  - workspace
+
+attacks:
+  - null # benign pass per defense — required for S2-09's utility comparison
+  - naive
+  - ignore_previous
+  - important_instructions
+  - context_completion
+  - encoding_obfuscation
+
+tasks:
+  workspace:
+    - user_task_0
+    - user_task_1
+    - user_task_3
+
+injection_tasks:
+  workspace: injection_task_0
+
+output:
+  trace_db: runs/local/static_sweep/trace.db
