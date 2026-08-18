@@ -115,20 +115,21 @@ Granular sub-steps for each task in Sprint 2 of [sprint_planning.md](sprint_plan
 - [x] Confirmed cost separability (Sprint 2 acceptance criterion) directly against the real trace DB: `cost_record.model` takes exactly 4 distinct values — `llama3.2:3b`, `llama3.1:latest`, `openai/gpt-oss-120b` (real agent cost, one row per model) and `defense:guard_model` (S2-05's separated defense overhead). No `defense:<name>` rows for the other 5 defenses, correctly — none of them make extra model calls, so there's nothing to separate.
 - [x] Confirmed injection-free benign coverage for the utility comparison: queried `episode` grouped by `(defense, model)` filtered to `injection_task_id IS NULL` — every one of the 12 local (defense, model) combinations has exactly 3 benign episodes (matching the 3 configured tasks, no gaps), plus 3 more for the Groq slice's one combination. 222 total episodes (216 local + 6 Groq), 74 `run` rows, 0 failures in the final state.
 
-## S2-12 — `results/static_baseline.md` (1.5h) 🟡
+## S2-12 — `results/static_baseline.md` (1.5h) 🟡 — done
 
-- [ ] Write `scripts/generate_static_baseline.py` (mirrors `scripts/reproduce_s1_08.py`'s pattern): queries the trace DB for security rate, partial-compromise rate, utility rate, and `cost_summary_by_episode` (from `trace/queries.py`), grouped by (defense, attack, model), and renders a markdown table.
-- [ ] Include a summary of the guard model's raw score distribution (needed later for S6-07's ROC curve), even if not fully analyzed yet.
-- [ ] Confirm the acceptance criterion: the table regenerates from traces with one command — no hand-copied numbers anywhere in the file.
-- [ ] Run the script against the S2-11 trace DB and commit `results/static_baseline.md`.
+- [x] Wrote `scripts/generate_static_baseline.py` (mirrors `scripts/reproduce_s1_08.py`'s pattern): a security table (ASR + partial-compromise rate, grouped by defense/attack/model, attacked episodes only), a utility table (S2-09's `benign_utility_rate` directly, injection-free only), a cost/latency table (built on `trace/queries.py::cost_summary_by_episode`, grouped by defense/model), and a guard-score summary — all four rendered to one markdown file. Also backfills `partial_compromise` (S2-08) for any unscored attacked episodes before generating, since the sweep itself never calls that post-hoc scorer inline — printed how many it backfilled (183, for the real S2-11 DB) so that's visible, not silent.
+- [x] Guard model score distribution: parses the double-encoded `detail_json` (S2-05's `GuardModel` reason is itself JSON, wrapped again by the adapter's `{"reason": ..., "tool_call_id": ...}` convention), reports count/parsed-count/block-vs-allow counts/min/mean/median/max — a summary now, with the full per-call distribution still sitting in the trace DB's `defense_event` rows for S6-07's ROC curve later.
+- [x] Confirmed the acceptance criterion directly: every number in `results/static_baseline.md` is `f`-string-rendered from a query result inside the script — nothing hand-typed. Re-running the script (`python scripts/generate_static_baseline.py runs/local/static_sweep/trace.db`) regenerates the file byte-for-byte from current DB state (modulo the generation timestamp).
+- [x] Ran it against the real S2-11 trace DB: 61 security rows (60 local + 1 Groq, matching `6 defenses × 5 attacks × 2 models + 1` exactly), 13 utility rows (12 local + 1 Groq). **Real, legible result, not a wall of zeros to shrug at**: every local-model cell shows ASR=0.000 (consistent with S1-08's own finding — these weaker models don't reliably execute the injected multi-step action within these short episodes, a capability ceiling, not defense effectiveness — see the correction note at the top of this file and Appendix A.5's own stated risk). The lone attacked Groq cell (`no_defense` × `important_instructions` × `openai/gpt-oss-120b`) shows **ASR=0.333** — the one point in the whole sweep where a real attack actually landed, and it's on the larger, more capable model, exactly the capability/vulnerability pattern Appendix A.5 predicts. Guard model recorded 32 scores (1 blocked, 31 allowed, range 0.0–0.9) across its defended episodes.
+- [x] Committing is left to the user per this session's standing instruction not to run `git commit` unless explicitly asked — `results/static_baseline.md` is written and ready in the working tree.
 
 ---
 
 ## Acceptance criteria (from sprint_planning.md)
 
-- [ ] Every defense reports its own cost via `cost()`; overhead is separable from base agent cost in the DB
-- [ ] Security and utility both measured for all 6 defenses on the same task set
-- [ ] Guard model emits a full score distribution, not just a binary — needed for the ROC later
-- [ ] Results table regenerates from traces with one command (never hand-copy a number)
+- [x] Every defense reports its own cost via `cost()`; overhead is separable from base agent cost in the DB — confirmed against the real S2-11 trace DB: `cost_record.model` cleanly separates agent cost (`llama3.2:3b`, `llama3.1:latest`, `openai/gpt-oss-120b`) from `defense:guard_model`'s overhead (S2-05).
+- [x] Security and utility both measured for all 6 defenses on the same task set — `results/static_baseline.md`'s security and utility tables both cover all 6 defenses × both local models × the same 3 tasks.
+- [x] Guard model emits a full score distribution, not just a binary — `detail_json` carries the raw score on every call (S2-05), summarized (not yet ROC-analyzed — that's S6-07) in `results/static_baseline.md`.
+- [x] Results table regenerates from traces with one command (never hand-copy a number) — `python scripts/generate_static_baseline.py <trace_db>` (S2-12).
 
 **Watch for:** the utility scorer must run on **injection-free** episodes only. If utility is measured on attacked runs, every number in the project is wrong — this is exactly what S2-09's assertion test exists to catch.
