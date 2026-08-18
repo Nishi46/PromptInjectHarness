@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from injection_pareto.defenses.base import Defense
+from injection_pareto.defenses.instructional_prevention import InstructionalPrevention
 from injection_pareto.defenses.no_defense import NoDefense
 from injection_pareto.defenses.spotlighting import Spotlighting
 
@@ -11,6 +12,7 @@ from injection_pareto.defenses.spotlighting import Spotlighting
 _DEFENSE_REGISTRY: dict[str, Callable[[], Defense]] = {
     "no_defense": NoDefense,
     "spotlighting": Spotlighting,
+    "instructional_prevention": InstructionalPrevention,
 }
 
 
