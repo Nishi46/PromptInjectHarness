@@ -5,6 +5,7 @@ from injection_pareto.defenses.no_defense import NoDefense
 from injection_pareto.defenses.registry import resolve_defense
 from injection_pareto.defenses.spotlighting import Spotlighting
 from injection_pareto.defenses.stack import DefenseStack
+from injection_pareto.defenses.tool_allowlist import ToolAllowlist
 
 __all__ = [
     "Defense",
@@ -13,5 +14,6 @@ __all__ = [
     "InstructionalPrevention",
     "NoDefense",
     "Spotlighting",
+    "ToolAllowlist",
     "resolve_defense",
 ]

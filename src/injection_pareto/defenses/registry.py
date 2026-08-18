@@ -7,6 +7,7 @@ from injection_pareto.defenses.guard_model import GuardModel
 from injection_pareto.defenses.instructional_prevention import InstructionalPrevention
 from injection_pareto.defenses.no_defense import NoDefense
 from injection_pareto.defenses.spotlighting import Spotlighting
+from injection_pareto.defenses.tool_allowlist import ToolAllowlist
 
 # One entry per config-declared defense name (RunSpec.defense). Sprint 2
 # (S2-03..S2-07) adds the real defenses here as they land.
@@ -15,6 +16,7 @@ _DEFENSE_REGISTRY: dict[str, Callable[[], Defense]] = {
     "spotlighting": Spotlighting,
     "instructional_prevention": InstructionalPrevention,
     "guard_model": GuardModel,
+    "tool_allowlist": ToolAllowlist,
 }
 
 

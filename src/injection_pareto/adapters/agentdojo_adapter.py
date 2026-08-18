@@ -319,7 +319,12 @@ def run_episode(
     user_task = suite.get_user_task_by_id(user_task_id)
 
     recorder = _EpisodeRecorder()
-    context = DefenseContext(task_id=user_task_id, metadata={"suite": suite_name})
+    # `user_task_prompt` lets a defense (e.g. S2-07's `ToolAllowlist`) check a
+    # tool-call argument against what the user actually asked for, without
+    # that defense needing its own copy of the suite/task lookup.
+    context = DefenseContext(
+        task_id=user_task_id, metadata={"suite": suite_name, "user_task_prompt": user_task.PROMPT}
+    )
 
     pre_generate = _PreGenerateElement(defense_stack, context, recorder)
     llm = _ModelClientLLM(model_client, recorder)
