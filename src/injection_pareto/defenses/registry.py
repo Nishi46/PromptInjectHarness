@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from injection_pareto.defenses.base import Defense
+from injection_pareto.defenses.canary import Canary
 from injection_pareto.defenses.guard_model import GuardModel
 from injection_pareto.defenses.instructional_prevention import InstructionalPrevention
 from injection_pareto.defenses.no_defense import NoDefense
@@ -17,6 +18,7 @@ _DEFENSE_REGISTRY: dict[str, Callable[[], Defense]] = {
     "instructional_prevention": InstructionalPrevention,
     "guard_model": GuardModel,
     "tool_allowlist": ToolAllowlist,
+    "canary": Canary,
 }
 
 
