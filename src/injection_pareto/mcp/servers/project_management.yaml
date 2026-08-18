@@ -1,0 +1,51 @@
+name: project_management
+description: Mock project-management server (Jira/Linear-style).
+tools:
+  - name: list_projects
+    description: List all projects visible to the current user.
+    parameters:
+      type: object
+      properties: {}
+      required: []
+    response: [{project_id: "P-1", name: "MCP suite"}, {project_id: "P-2", name: "Adaptive attacks"}]
+
+  - name: get_task
+    description: Get full details for one task by id.
+    parameters:
+      type: object
+      properties:
+        task_id:
+          type: string
+      required: [task_id]
+    response: "no such task"
+    error: "task not found"
+    variants:
+      - when:
+          task_id: "TSK-1"
+        response: {task_id: "TSK-1", title: "Author 15 mock servers", status: "in_progress", assignee: "you"}
+
+  - name: create_task
+    description: Create a new task within a project.
+    parameters:
+      type: object
+      properties:
+        project_id:
+          type: string
+        title:
+          type: string
+        assignee:
+          type: string
+      required: [project_id, title]
+    response: {task_id: "TSK-2", status: "created"}
+
+  - name: update_task_status
+    description: Change the status of an existing task.
+    parameters:
+      type: object
+      properties:
+        task_id:
+          type: string
+        status:
+          type: string
+      required: [task_id, status]
+    response: {status: "updated"}

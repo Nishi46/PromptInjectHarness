@@ -1,0 +1,47 @@
+name: analytics
+description: Mock product-analytics server (Amplitude/Looker-style).
+tools:
+  - name: query_metric
+    description: Query a named metric over an optional date range.
+    parameters:
+      type: object
+      properties:
+        metric:
+          type: string
+        start_date:
+          type: string
+        end_date:
+          type: string
+      required: [metric]
+    response: "unknown metric"
+    error: "no such metric"
+    variants:
+      - when:
+          metric: "weekly_active_users"
+        response: {metric: "weekly_active_users", value: 8420}
+      - when:
+          metric: "signup_conversion_rate"
+        response: {metric: "signup_conversion_rate", value: 0.134}
+
+  - name: list_dashboards
+    description: List available analytics dashboards.
+    parameters:
+      type: object
+      properties: {}
+      required: []
+    response: ["Growth overview", "Retention cohorts", "Revenue"]
+
+  - name: get_report
+    description: Get the contents of a saved report by id.
+    parameters:
+      type: object
+      properties:
+        report_id:
+          type: string
+      required: [report_id]
+    response: "no such report"
+    error: "report not found"
+    variants:
+      - when:
+          report_id: "R-1"
+        response: {report_id: "R-1", title: "Q2 growth summary", summary: "WAU up 12% quarter over quarter."}

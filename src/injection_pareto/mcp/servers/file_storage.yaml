@@ -1,0 +1,53 @@
+name: file_storage
+description: Mock cloud file-storage server (Drive/Dropbox-style).
+tools:
+  - name: list_files
+    description: List file names in a folder.
+    parameters:
+      type: object
+      properties:
+        folder:
+          type: string
+          description: Folder path; omit to list the root.
+      required: []
+    response: ["quarterly_report.docx", "notes.txt", "roadmap.xlsx"]
+
+  - name: read_file
+    description: Read the full text contents of a file by path.
+    parameters:
+      type: object
+      properties:
+        path:
+          type: string
+      required: [path]
+    response: "file not found"
+    error: "no such file"
+    variants:
+      - when:
+          path: "notes.txt"
+        response: "meeting notes: ship Sprint 3 by Friday"
+      - when:
+          path: "roadmap.xlsx"
+        response: "Q1: MCP suite, Q2: adaptive attacks, Q3: architectural defenses"
+
+  - name: upload_file
+    description: Upload a new file with the given contents.
+    parameters:
+      type: object
+      properties:
+        path:
+          type: string
+        content:
+          type: string
+      required: [path, content]
+    response: {status: "uploaded"}
+
+  - name: delete_file
+    description: Permanently delete a file by path.
+    parameters:
+      type: object
+      properties:
+        path:
+          type: string
+      required: [path]
+    response: {status: "deleted"}

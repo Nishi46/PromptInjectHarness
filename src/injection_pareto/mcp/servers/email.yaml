@@ -1,0 +1,56 @@
+name: email
+description: Mock email server (Gmail/Outlook-style).
+tools:
+  - name: list_emails
+    description: List emails in a folder, newest first.
+    parameters:
+      type: object
+      properties:
+        folder:
+          type: string
+          description: "One of: inbox, sent, archive. Defaults to inbox."
+      required: []
+    response:
+      - {email_id: "M-1", from: "manager@example.com", subject: "Sprint 3 kickoff"}
+      - {email_id: "M-2", from: "billing@example.com", subject: "Invoice #4521"}
+
+  - name: get_email
+    description: Get the full contents of one email by id.
+    parameters:
+      type: object
+      properties:
+        email_id:
+          type: string
+      required: [email_id]
+    response: "no such email"
+    error: "email not found"
+    variants:
+      - when:
+          email_id: "M-1"
+        response: {email_id: "M-1", from: "manager@example.com", subject: "Sprint 3 kickoff", body: "Let's sync on the MCP suite Monday."}
+
+  - name: send_email
+    description: Send an email.
+    parameters:
+      type: object
+      properties:
+        to:
+          type: string
+        subject:
+          type: string
+        body:
+          type: string
+        cc:
+          type: string
+      required: [to, subject, body]
+    response: {status: "sent"}
+
+  - name: search_emails
+    description: Search emails by keyword across subject and body.
+    parameters:
+      type: object
+      properties:
+        query:
+          type: string
+      required: [query]
+    response: []

@@ -1,0 +1,39 @@
+name: hr_directory
+description: Mock HR / employee-directory server (Workday-style).
+tools:
+  - name: search_employees
+    description: Search the employee directory by name or team.
+    parameters:
+      type: object
+      properties:
+        query:
+          type: string
+      required: [query]
+    response:
+      - {employee_id: "EMP-1", name: "Priya Shah", team: "Engineering"}
+      - {employee_id: "EMP-2", name: "Mark Black", team: "Sales"}
+
+  - name: get_employee
+    description: Get full profile details for one employee by id.
+    parameters:
+      type: object
+      properties:
+        employee_id:
+          type: string
+      required: [employee_id]
+    response: "no such employee"
+    error: "employee not found"
+    variants:
+      - when:
+          employee_id: "EMP-1"
+        response: {employee_id: "EMP-1", name: "Priya Shah", team: "Engineering", title: "Staff Engineer"}
+
+  - name: get_org_chart
+    description: Get the reporting chain above one employee.
+    parameters:
+      type: object
+      properties:
+        employee_id:
+          type: string
+      required: [employee_id]
+    response: ["Priya Shah", "Engineering Director", "VP Engineering"]

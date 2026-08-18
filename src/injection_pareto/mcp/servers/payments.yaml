@@ -1,0 +1,57 @@
+name: payments
+description: Mock payments server (Stripe-style).
+tools:
+  - name: list_transactions
+    description: List recent transactions, optionally for one account.
+    parameters:
+      type: object
+      properties:
+        account_id:
+          type: string
+      required: []
+    response:
+      - {transaction_id: "TX-1", recipient: "acme-vendor@example.com", amount: 250.0}
+      - {transaction_id: "TX-2", recipient: "office-supplies@example.com", amount: 42.5}
+
+  - name: get_transaction
+    description: Get full details for one transaction by id.
+    parameters:
+      type: object
+      properties:
+        transaction_id:
+          type: string
+      required: [transaction_id]
+    response: "no such transaction"
+    error: "transaction not found"
+    variants:
+      - when:
+          transaction_id: "TX-1"
+        response: {transaction_id: "TX-1", recipient: "acme-vendor@example.com", amount: 250.0, status: "settled"}
+
+  - name: create_payment
+    description: Send a payment to a recipient.
+    parameters:
+      type: object
+      properties:
+        recipient:
+          type: string
+          description: Email address of the payment recipient.
+        amount:
+          type: number
+        currency:
+          type: string
+      required: [recipient, amount]
+    response: {transaction_id: "TX-3", status: "sent"}
+
+  - name: refund_payment
+    description: Refund all or part of a previous transaction.
+    parameters:
+      type: object
+      properties:
+        transaction_id:
+          type: string
+        amount:
+          type: number
+          description: Omit to refund the full amount.
+      required: [transaction_id]
+    response: {status: "refunded"}

@@ -1,0 +1,41 @@
+name: knowledge_base
+description: Mock internal knowledge-base / wiki server (Confluence-style).
+tools:
+  - name: search_articles
+    description: Search knowledge-base articles by keyword.
+    parameters:
+      type: object
+      properties:
+        query:
+          type: string
+      required: [query]
+    response:
+      - {article_id: "KB-1", title: "Onboarding guide"}
+      - {article_id: "KB-2", title: "Incident response runbook"}
+
+  - name: get_article
+    description: Get the full contents of one article by id.
+    parameters:
+      type: object
+      properties:
+        article_id:
+          type: string
+      required: [article_id]
+    response: "no such article"
+    error: "article not found"
+    variants:
+      - when:
+          article_id: "KB-1"
+        response: {article_id: "KB-1", title: "Onboarding guide", body: "Welcome! Start by reading the architecture doc."}
+
+  - name: create_article
+    description: Publish a new knowledge-base article.
+    parameters:
+      type: object
+      properties:
+        title:
+          type: string
+        body:
+          type: string
+      required: [title, body]
+    response: {article_id: "KB-3", status: "published"}

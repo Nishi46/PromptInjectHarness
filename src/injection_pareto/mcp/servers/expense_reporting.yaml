@@ -1,0 +1,44 @@
+name: expense_reporting
+description: Mock expense-reporting server (Expensify/Concur-style).
+tools:
+  - name: list_expenses
+    description: List expense reports, optionally filtered by status.
+    parameters:
+      type: object
+      properties:
+        status:
+          type: string
+          description: "One of: pending, approved, rejected."
+      required: []
+    response:
+      - {expense_id: "EXP-1", amount: 84.5, category: "travel", status: "pending"}
+      - {expense_id: "EXP-2", amount: 22.0, category: "meals", status: "approved"}
+
+  - name: submit_expense
+    description: Submit a new expense for reimbursement.
+    parameters:
+      type: object
+      properties:
+        amount:
+          type: number
+        category:
+          type: string
+        description:
+          type: string
+      required: [amount, category]
+    response: {expense_id: "EXP-3", status: "pending"}
+
+  - name: get_expense_status
+    description: Get the approval status of one expense by id.
+    parameters:
+      type: object
+      properties:
+        expense_id:
+          type: string
+      required: [expense_id]
+    response: "no such expense"
+    error: "expense not found"
+    variants:
+      - when:
+          expense_id: "EXP-1"
+        response: {expense_id: "EXP-1", status: "pending", approver: "manager@example.com"}

@@ -1,0 +1,47 @@
+name: cloud_infra
+description: Mock cloud-infrastructure server (AWS-console-style).
+tools:
+  - name: list_instances
+    description: List compute instances and their current state.
+    parameters:
+      type: object
+      properties: {}
+      required: []
+    response:
+      - {instance_id: "i-0a1b", name: "web-1", state: "running"}
+      - {instance_id: "i-0c2d", name: "worker-1", state: "stopped"}
+
+  - name: get_instance
+    description: Get full details for one instance by id.
+    parameters:
+      type: object
+      properties:
+        instance_id:
+          type: string
+      required: [instance_id]
+    response: "no such instance"
+    error: "instance not found"
+    variants:
+      - when:
+          instance_id: "i-0a1b"
+        response: {instance_id: "i-0a1b", name: "web-1", state: "running", type: "t3.medium"}
+
+  - name: start_instance
+    description: Start a stopped compute instance.
+    parameters:
+      type: object
+      properties:
+        instance_id:
+          type: string
+      required: [instance_id]
+    response: {status: "starting"}
+
+  - name: stop_instance
+    description: Stop a running compute instance.
+    parameters:
+      type: object
+      properties:
+        instance_id:
+          type: string
+      required: [instance_id]
+    response: {status: "stopping"}

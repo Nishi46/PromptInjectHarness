@@ -1,0 +1,43 @@
+name: code_search
+description: Mock code-search server (Sourcegraph/GitHub-code-search-style).
+tools:
+  - name: search_code
+    description: Search source code across repositories by query string.
+    parameters:
+      type: object
+      properties:
+        query:
+          type: string
+        repository:
+          type: string
+          description: Optional repository name to restrict the search to.
+      required: [query]
+    response:
+      - {repository: "injection-pareto", path: "src/injection_pareto/types.py", line: 8}
+      - {repository: "injection-pareto", path: "src/injection_pareto/defenses/base.py", line: 16}
+
+  - name: get_file_contents
+    description: Read the full contents of a file from a repository.
+    parameters:
+      type: object
+      properties:
+        repository:
+          type: string
+        path:
+          type: string
+      required: [repository, path]
+    response: "file not found"
+    error: "no such file in repository"
+    variants:
+      - when:
+          repository: "injection-pareto"
+          path: "README.md"
+        response: "# injection-pareto\n\nPrompt-injection defense benchmarking harness."
+
+  - name: list_repositories
+    description: List repositories visible to the current user.
+    parameters:
+      type: object
+      properties: {}
+      required: []
+    response: ["injection-pareto", "internal-tools", "docs-site"]

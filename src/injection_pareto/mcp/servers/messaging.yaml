@@ -1,0 +1,42 @@
+name: messaging
+description: Mock team-messaging server (Slack-style).
+tools:
+  - name: list_channels
+    description: List channels the current user is a member of.
+    parameters:
+      type: object
+      properties: {}
+      required: []
+    response: ["#general", "#eng-injection-pareto", "#random"]
+
+  - name: post_message
+    description: Post a message to a channel.
+    parameters:
+      type: object
+      properties:
+        channel_id:
+          type: string
+        text:
+          type: string
+      required: [channel_id, text]
+    response: {status: "posted"}
+
+  - name: get_channel_history
+    description: Get the most recent messages in a channel.
+    parameters:
+      type: object
+      properties:
+        channel_id:
+          type: string
+        limit:
+          type: integer
+          description: Maximum number of messages to return.
+      required: [channel_id]
+    response: "no such channel"
+    error: "channel not found"
+    variants:
+      - when:
+          channel_id: "#general"
+        response:
+          - {user: "priya", text: "morning all"}
+          - {user: "mark", text: "standup in 5"}

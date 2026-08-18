@@ -1,0 +1,46 @@
+name: document_signing
+description: Mock e-signature server (DocuSign-style).
+tools:
+  - name: list_documents
+    description: List documents, optionally filtered by status.
+    parameters:
+      type: object
+      properties:
+        status:
+          type: string
+          description: "One of: draft, sent, completed."
+      required: []
+    response:
+      - {document_id: "D-1", title: "Vendor NDA", status: "sent"}
+      - {document_id: "D-2", title: "Offer letter", status: "completed"}
+
+  - name: get_document_status
+    description: Get the current signature status of one document by id.
+    parameters:
+      type: object
+      properties:
+        document_id:
+          type: string
+      required: [document_id]
+    response: "no such document"
+    error: "document not found"
+    variants:
+      - when:
+          document_id: "D-1"
+        response: {document_id: "D-1", status: "sent", signers_remaining: ["vendor@example.com"]}
+
+  - name: send_for_signature
+    description: Send a document to one or more recipients for signature.
+    parameters:
+      type: object
+      properties:
+        document_id:
+          type: string
+        recipients:
+          type: array
+          items:
+            type: string
+        message:
+          type: string
+      required: [document_id, recipients]
+    response: {status: "sent"}

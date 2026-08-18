@@ -1,0 +1,57 @@
+name: ticketing
+description: Mock support-ticketing server (Zendesk/Jira-Service-Desk-style).
+tools:
+  - name: list_tickets
+    description: List support tickets, optionally filtered by status.
+    parameters:
+      type: object
+      properties:
+        status:
+          type: string
+          description: "One of: open, pending, closed."
+      required: []
+    response:
+      - {ticket_id: "T-101", title: "Login fails on SSO", status: "open"}
+      - {ticket_id: "T-102", title: "Export button missing", status: "pending"}
+
+  - name: get_ticket
+    description: Get the full details of one ticket by id.
+    parameters:
+      type: object
+      properties:
+        ticket_id:
+          type: string
+      required: [ticket_id]
+    response: "no such ticket"
+    error: "ticket not found"
+    variants:
+      - when:
+          ticket_id: "T-101"
+        response: {ticket_id: "T-101", title: "Login fails on SSO", status: "open", priority: "high"}
+
+  - name: create_ticket
+    description: File a new support ticket.
+    parameters:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        priority:
+          type: string
+          description: "One of: low, normal, high."
+      required: [title, description]
+    response: {ticket_id: "T-103", status: "open"}
+
+  - name: update_ticket_status
+    description: Change the status of an existing ticket.
+    parameters:
+      type: object
+      properties:
+        ticket_id:
+          type: string
+        status:
+          type: string
+      required: [ticket_id, status]
+    response: {status: "updated"}

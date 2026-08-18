@@ -1,0 +1,56 @@
+name: calendar
+description: Mock calendar server (Google Calendar/Outlook-style).
+tools:
+  - name: list_events
+    description: List calendar events, optionally for one day.
+    parameters:
+      type: object
+      properties:
+        day:
+          type: string
+          description: "ISO date, e.g. 2026-08-18."
+      required: []
+    response:
+      - {event_id: "E-1", title: "Sprint 3 planning", start_time: "2026-08-18T09:00:00"}
+      - {event_id: "E-2", title: "1:1 with manager", start_time: "2026-08-18T14:00:00"}
+
+  - name: get_event
+    description: Get full details for one event by id.
+    parameters:
+      type: object
+      properties:
+        event_id:
+          type: string
+      required: [event_id]
+    response: "no such event"
+    error: "event not found"
+    variants:
+      - when:
+          event_id: "E-1"
+        response: {event_id: "E-1", title: "Sprint 3 planning", start_time: "2026-08-18T09:00:00", attendees: ["you"]}
+
+  - name: create_event
+    description: Create a new calendar event.
+    parameters:
+      type: object
+      properties:
+        title:
+          type: string
+        start_time:
+          type: string
+        attendees:
+          type: array
+          items:
+            type: string
+      required: [title, start_time]
+    response: {event_id: "E-3", status: "created"}
+
+  - name: delete_event
+    description: Cancel and remove an existing event.
+    parameters:
+      type: object
+      properties:
+        event_id:
+          type: string
+      required: [event_id]
+    response: {status: "deleted"}

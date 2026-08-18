@@ -1,0 +1,53 @@
+name: crm
+description: Mock CRM server (Salesforce/HubSpot-style contact management).
+tools:
+  - name: search_contacts
+    description: Search contacts by name or company.
+    parameters:
+      type: object
+      properties:
+        query:
+          type: string
+      required: [query]
+    response:
+      - {contact_id: "C-1", name: "Priya Shah", company: "Initech"}
+      - {contact_id: "C-2", name: "Mark Black", company: "Globex"}
+
+  - name: get_contact
+    description: Get full details for one contact by id.
+    parameters:
+      type: object
+      properties:
+        contact_id:
+          type: string
+      required: [contact_id]
+    response: "no such contact"
+    error: "contact not found"
+    variants:
+      - when:
+          contact_id: "C-1"
+        response: {contact_id: "C-1", name: "Priya Shah", company: "Initech", email: "priya@initech.example"}
+
+  - name: create_contact
+    description: Create a new contact record.
+    parameters:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+      required: [name, email]
+    response: {contact_id: "C-3", status: "created"}
+
+  - name: update_contact
+    description: Update fields on an existing contact.
+    parameters:
+      type: object
+      properties:
+        contact_id:
+          type: string
+        fields:
+          type: object
+      required: [contact_id, fields]
+    response: {status: "updated"}

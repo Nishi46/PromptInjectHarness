@@ -19,14 +19,15 @@ Granular sub-steps for each task in Sprint 3 of [sprint_planning.md](sprint_plan
 - [x] Wrote one throwaway example server (`mcp/servers/_example.yaml`, 2 tools) to validate loader + runtime end-to-end before committing to 15 real ones in S3-02.
 - [x] `ruff check .`, `mypy .`, and the full `pytest` suite (127 tests) all clean after the change.
 
-## S3-02 — Author 15 mock servers (4h) 🔴 — deps: S3-01
+## S3-02 — Author 15 mock servers (4h) 🔴 — deps: S3-01 — done
 
-- [ ] Name all 15 domains up front in `mcp/servers/README.md` before authoring any — e.g. file storage, ticketing, CRM, calendar, payments, code search, analytics, email, team messaging, project management, HR/directory, cloud infra, document signing, expense reporting, knowledge base/wiki. Fixing the list first avoids re-authoring once S3-04's poisoned cases start depending on specific tool names.
-- [ ] For each domain, list 2-4 realistic tools (e.g. file storage: `list_files`, `read_file`, `upload_file`, `delete_file`) in the same README before writing any YAML — S3-04 needs the full tool inventory to spread 4 sub-families across.
-- [ ] Author each server as `mcp/servers/<domain>.yaml`, one at a time; confirm each loads cleanly via `load_server` immediately after writing it (don't batch-author all 15 before validating the first).
-- [ ] Apply one consistent naming convention for tool/argument names across all 15 servers — needed so S3-04's cross-tool-redirection sub-family (one tool's description references another tool by name) has stable names to point at.
-- [ ] Integration test (`tests/test_mcp_servers.py`): loads all 15 real server specs (not fixtures), asserts each parses, has ≥1 tool, and no tool description is empty — a cheap regression gate against a future YAML edit silently breaking loading.
-- [ ] Manual check: instantiate `MockMCPRuntime` with all 15 servers mounted together; confirm no tool-name collisions across servers, or decide + implement a namespacing rule (`server.tool`) if any are found.
+- [x] Named all 15 domains up front in `mcp/servers/README.md` before authoring any: file storage, ticketing, CRM, calendar, payments, code search, analytics, email, team messaging, project management, HR/directory, cloud infra, document signing, expense reporting, knowledge base/wiki.
+- [x] Listed 2-4 realistic tools per domain in the same README before writing any YAML (e.g. file storage: `list_files`, `read_file`, `upload_file`, `delete_file`) — 46 tools total across the 15 servers.
+- [x] Authored each server as `mcp/servers/<domain>.yaml` (`file_storage.yaml`, `ticketing.yaml`, `crm.yaml`, `calendar.yaml`, `payments.yaml`, `code_search.yaml`, `analytics.yaml`, `email.yaml`, `messaging.yaml`, `project_management.yaml`, `hr_directory.yaml`, `cloud_infra.yaml`, `document_signing.yaml`, `expense_reporting.yaml`, `knowledge_base.yaml`); each loads cleanly via `load_server`.
+- [x] Applied one consistent naming convention across all 15 (documented in the README): `verb_noun` snake_case tool names, `<noun>_id` identifier arguments, `query` for free-text search. Also deliberately reused S2-07's `ToolAllowlist`-recognized destination argument names (`to`/`cc` on `email.send_email`, `recipient` on `payments.create_payment`, `recipients` on `document_signing.send_for_signature`) so that defense has something real to check against once S3-06 wires the sweep up.
+- [x] Integration test (`tests/test_mcp_servers.py`, 4 tests): exactly 15 real server specs exist; every one parses with ≥1 tool and no empty tool description; no tool name is reused across two different servers; all 15 mount together in one `MockMCPRuntime` with ≥30 total tools and zero collisions.
+- [x] Manual check folded into the last test above rather than done by hand: `MockMCPRuntime(servers=[... all 15 ...])` mounts cleanly, no namespacing rule needed — the naming convention was enough to avoid collisions by construction.
+- [x] Full `pytest` suite (131 tests), `ruff check .`, and `mypy .` all clean after the change.
 
 ## S3-03 — ~15 benign user tasks (3h) 🔴 — deps: S3-02
 
