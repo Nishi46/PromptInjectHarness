@@ -252,6 +252,24 @@ def test_recorder_reset_keeps_model_responses() -> None:
     assert recorder.model_responses == [response]
 
 
+class _FakeGuardResponse:
+    def __init__(self, usd: float, tokens_in: int, tokens_out: int, wall_ms: int) -> None:
+        self.tokens_in = tokens_in
+        self.tokens_out = tokens_out
+        self.wall_ms = wall_ms
+        self.cost = CostRecord(usd=usd, tokens_in=tokens_in, tokens_out=tokens_out)
+        self.cache_hit = False
+
+
+class _FakeGuardDefense(_AllowDefense):
+    """Stands in for S2-05's `GuardModel`: exposes a `responses` attribute
+    that `_write_episode_trace` duck-types on to record defense-internal
+    model calls separately from the agent's own."""
+
+    def __init__(self, responses: list[_FakeGuardResponse]) -> None:
+        self.responses = responses
+
+
 def _open_test_db(tmp_path: Path) -> tuple:
     conn = connect(tmp_path / "trace.db")
     init_db(conn)
@@ -265,6 +283,53 @@ def _open_test_db(tmp_path: Path) -> tuple:
     )
     episode_id = insert_episode(conn, run_id=run_id, task_id="user_task_0", started_at="t0")
     return conn, run_id, episode_id
+
+
+def test_write_episode_trace_records_defense_model_calls_separately_from_agent(
+    tmp_path: Path,
+) -> None:
+    """S2-05: a defense that makes its own model calls (e.g. `GuardModel`)
+    exposes them via `.responses`; those must land in `cost_record` labeled
+    `defense:<defense_name>`, distinct from the agent's own `model_name`-
+    labeled rows, so overhead is separable in the DB (Sprint 2 acceptance
+    criterion)."""
+    conn, run_id, episode_id = _open_test_db(tmp_path)
+    try:
+        messages = [
+            {"role": "system", "content": [{"type": "text", "content": "sys"}]},
+            {"role": "user", "content": [{"type": "text", "content": "go"}]},
+        ]
+        recorder = _recorder()
+        recorder.model_responses.append(
+            ModelResponse(
+                text="hi", tool_calls=[], tokens_in=100, tokens_out=50, wall_ms=200,
+                cost=CostRecord(usd=0.01, tokens_in=100, tokens_out=50), raw={},
+            )
+        )
+        guard_defense = _FakeGuardDefense(
+            [_FakeGuardResponse(usd=0.0005, tokens_in=10, tokens_out=2, wall_ms=5)]
+        )
+        stack = DefenseStack([guard_defense])
+
+        _write_episode_trace(
+            conn,
+            run_id=run_id,
+            episode_id=episode_id,
+            messages=messages,
+            recorder=recorder,
+            defense_name="guard_model",
+            model_name="llama3.2:3b",
+            valid_function_names=set(),
+            defense_stack=stack,
+        )
+
+        rows = {r["model"]: r for r in conn.execute("SELECT model, usd, wall_ms FROM cost_record")}
+    finally:
+        conn.close()
+
+    assert rows["llama3.2:3b"]["usd"] == 0.01
+    assert rows["defense:guard_model"]["usd"] == 0.0005
+    assert rows["defense:guard_model"]["wall_ms"] == 5
 
 
 def test_write_episode_trace_handles_max_iters_cutoff_without_crashing(tmp_path: Path) -> None:

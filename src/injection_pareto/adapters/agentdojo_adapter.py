@@ -378,6 +378,7 @@ def run_episode(
         defense_name=defense_name,
         model_name=model_name,
         valid_function_names=valid_function_names,
+        defense_stack=defense_stack,
     )
 
     return EpisodeResult(
@@ -399,6 +400,7 @@ def _write_episode_trace(
     defense_name: str,
     model_name: str,
     valid_function_names: set[str],
+    defense_stack: DefenseStack | None = None,
 ) -> tuple[int, int]:
     """Walk the final message transcript once and write every
     step/tool_call/defense_event/cost_record row in a single batched
@@ -414,6 +416,16 @@ def _write_episode_trace(
         before ever calling `FunctionsRuntime.run_function` — it still
         appends an error result message, but `recorder.tool_call_events` has
         no entry for that call, since our runtime never saw it.
+
+    `defense_stack` is optional (defaults to `None`, skipping the block
+    below) purely so existing low-level tests can call this function without
+    constructing a live stack — every real call site (`run_episode`) passes
+    one. A defense that makes its own model calls (e.g. S2-05's `GuardModel`)
+    exposes them via a `responses: list[ModelResponse]` attribute; any
+    defense with that attribute gets its calls written to `cost_record`
+    labeled `defense:<defense_name>`, separable from the agent's own
+    `model_name`-labeled rows (S2-05's "overhead is separable from base
+    agent cost" acceptance criterion).
     """
     step_count = 0
     tool_call_count = 0
@@ -523,5 +535,20 @@ def _write_episode_trace(
                 cache_hit=response.cache_hit,
                 timestamp=_now(),
             )
+
+        for defense in defense_stack.defenses if defense_stack is not None else []:
+            for response in getattr(defense, "responses", []):
+                insert_cost_record(
+                    conn,
+                    run_id=run_id,
+                    episode_id=episode_id,
+                    model=f"defense:{defense_name}",
+                    tokens_in=response.tokens_in,
+                    tokens_out=response.tokens_out,
+                    wall_ms=response.wall_ms,
+                    usd=response.cost.usd,
+                    cache_hit=response.cache_hit,
+                    timestamp=_now(),
+                )
 
     return step_count, tool_call_count

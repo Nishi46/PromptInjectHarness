@@ -86,6 +86,32 @@ class BlockingToolCallDefense:
         return CostRecord()
 
 
+class AllowWithReasonDefense:
+    """Sets a reason without ever blocking -- e.g. S2-05's `GuardModel`,
+    which logs its score on every call, not just when it blocks."""
+
+    def __init__(self, reason: str) -> None:
+        self._reason = reason
+
+    def on_pre_generate(
+        self, context: DefenseContext, messages: list[Message]
+    ) -> HookResult[list[Message]]:
+        return HookResult(value=messages, reason=self._reason)
+
+    def on_pre_tool_call(
+        self, context: DefenseContext, tool_call: ToolCall
+    ) -> HookResult[ToolCall]:
+        return HookResult(value=tool_call, reason=self._reason)
+
+    def on_tool_result(
+        self, context: DefenseContext, tool_result: ToolResult
+    ) -> HookResult[ToolResult]:
+        return HookResult(value=tool_result, reason=self._reason)
+
+    def cost(self) -> CostRecord:
+        return CostRecord()
+
+
 class FlaggingDefense:
     """No-op defense that records whether it was invoked."""
 
@@ -146,3 +172,15 @@ def test_block_short_circuits_later_defenses() -> None:
     assert result.verdict is Verdict.BLOCK
     assert result.reason == "denied"
     assert later.called is False
+
+
+def test_allow_verdict_reason_survives_the_stack() -> None:
+    """Regression: an ALLOW-verdict reason must not be silently dropped just
+    because nothing blocked (S2-05's `GuardModel` relies on this to log a
+    score on every tool result, not just blocked ones)."""
+    stack = DefenseStack([AllowWithReasonDefense('{"score": 0.9}')])
+
+    result = stack.on_tool_result(DefenseContext(), ToolResult(tool_call_id="1", content="x"))
+
+    assert result.verdict is Verdict.ALLOW
+    assert result.reason == '{"score": 0.9}'
