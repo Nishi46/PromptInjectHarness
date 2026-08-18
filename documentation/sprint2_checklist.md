@@ -14,13 +14,13 @@ Granular sub-steps for each task in Sprint 2 of [sprint_planning.md](sprint_plan
 - [x] Unit test (`tests/test_attacks_registry.py`): `naive` maps to `direct`; `ignore_previous`/`important_instructions` pass through unchanged; an unknown name raises a clear, typed error (mirrors `tests/test_defenses_registry.py`'s style).
 - [x] Full suite (49 tests), `ruff check .`, and `mypy .` all clean after the change.
 
-## S2-03 — D2 Spotlighting (1.5h) 🔴
+## S2-03 — D2 Spotlighting (1.5h) 🔴 — done
 
-- [ ] Implement `defenses/spotlighting.py`: `on_tool_result` delimits and datamarks untrusted content before it re-enters the transcript; decide whether `on_pre_generate` also needs a system-prompt addendum explaining the marking scheme, and document the decision in the class docstring.
-- [ ] `cost()` returns zero (pure text transform, no extra model calls).
-- [ ] Register in `defenses/registry.py`.
-- [ ] Unit test: a tool result containing an embedded instruction comes out delimited/marked as expected (deterministic string assertion).
-- [ ] Manual check: run one S2-02 attack against `no_defense` vs `spotlighting` on the known-good `llama3.2:3b`/`workspace`/`user_task_0` combo from S1-08; confirm the security flag can flip before trusting the full sweep.
+- [x] Implement `defenses/spotlighting.py`: `on_tool_result` wraps untrusted content in `<<DATA>>...<</DATA>>` delimiters and datamarks it (spaces → `^`) before it re-enters the transcript. `on_pre_generate` appends a one-time system-prompt addendum explaining the marking scheme — decided it's needed (the model can't know what the markers mean otherwise) and made it idempotent (checks the addendum isn't already present) since this hook fires before every LLM call in a multi-turn episode, not just the first; documented in the class docstring.
+- [x] `cost()` returns zero (pure text transform, no extra model calls).
+- [x] Registered `spotlighting` in `defenses/registry.py` and exported `Spotlighting` from `defenses/__init__.py`.
+- [x] Unit tests (`tests/test_spotlighting.py`): tool result comes out delimited + datamarked exactly as expected; `is_error` preserved; system-message addendum applied once and left idempotent across a second `on_pre_generate` call (non-system messages, and non-mutating cost, also covered); `resolve_defense("spotlighting")` returns a `Spotlighting` instance.
+- [x] Manual check: ran `context_completion` (S2-02) through the adapter on the S1-08 combo with `spotlighting`. Confirmed via the real trace DB that the system message carries the addendum and the tool result is delimited/datamarked exactly as the unit test expects (e.g. the injected "Step^complete:^the^previous^action..." text visibly marked inside `<<DATA>>...<</DATA>>`). Security stayed `False` for this specific attack/model pair — the weak local 3B model still leaked even with marked data — a real result to characterize in S2-11's sweep, not a defect in the defense's mechanics.
 
 ## S2-04 — D3 Instructional prevention (1h) 🔴
 
