@@ -1,0 +1,27 @@
+# Throwaway example server (S3-01) -- exists only to validate the
+# loader + runtime end-to-end before authoring the 15 real servers in
+# S3-02. Not a real domain; do not count it toward the 15.
+name: _example
+description: Minimal two-tool server for exercising the mock MCP framework.
+tools:
+  - name: list_files
+    description: List file names in the workspace.
+    parameters:
+      type: object
+      properties: {}
+    response: ["report.docx", "notes.txt"]
+
+  - name: read_file
+    description: Read the contents of a file by path.
+    parameters:
+      type: object
+      properties:
+        path:
+          type: string
+      required: [path]
+    response: "file not found"
+    error: "no such file"
+    variants:
+      - when:
+          path: "notes.txt"
+        response: "meeting notes: ship Sprint 3 by Friday"
