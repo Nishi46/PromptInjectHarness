@@ -1,0 +1,69 @@
+# Sprint 3's MCP tool-poisoning sweep (S3-06): 6 defenses × 4 poisoned-
+# description sub-families (+ a benign/no-attack pass per defense, for the
+# utility baseline) × 2 local models × 15 benign tasks. Local-only ($0),
+# same model set validated in S2-11 (`configs/static_sweep.yaml`).
+#
+# One representative poisoned case per sub-family (mirrors S2-10's "one
+# representative injection point per suite" simplification, applied per
+# sub-family here — S3-04/S3-05's own docs explain why). `expand_run_specs`
+# (config/loader.py) automatically filters `mcp_tasks` down to just the
+# task(s) that actually mount each case's `target_server` for the attacked
+# passes — the benign pass still runs the full 15-task utility baseline.
+
+name: mcp_sweep
+
+models:
+  - id: L1
+    provider: ollama
+    model: llama3.2:3b
+    digest: sha256:a80c4f17acd5
+  - id: L2
+    provider: ollama
+    model: llama3.1:latest
+    digest: sha256:46e0c10c039e
+
+defenses:
+  - no_defense
+  - spotlighting
+  - instructional_prevention
+  - guard_model
+  - canary
+  - tool_allowlist
+
+suites:
+  - mcp
+
+attacks:
+  - null # benign pass per defense — the utility baseline over all 15 tasks
+  - direct_instruction
+  - fake_usage_note
+  - fake_precondition
+  - cross_tool_redirection
+
+tasks: {} # unused for the "mcp" suite (see mcp_tasks below); required key, kept empty
+
+mcp_tasks:
+  - mcp_file_storage_0
+  - mcp_ticketing_0
+  - mcp_crm_0
+  - mcp_calendar_0
+  - mcp_payments_0
+  - mcp_code_search_0
+  - mcp_analytics_0
+  - mcp_email_0
+  - mcp_messaging_0
+  - mcp_project_management_0
+  - mcp_hr_directory_0
+  - mcp_cloud_infra_0
+  - mcp_document_signing_0
+  - mcp_expense_reporting_0
+  - mcp_knowledge_base_0
+
+mcp_poisoned_cases:
+  direct_instruction: poison_direct_instruction_file_storage_list_files
+  fake_usage_note: poison_fake_usage_note_email_get_email
+  fake_precondition: poison_fake_precondition_payments_get_transaction
+  cross_tool_redirection: poison_cross_tool_redirection_crm_search_contacts
+
+output:
+  trace_db: runs/local/mcp_sweep/trace.db

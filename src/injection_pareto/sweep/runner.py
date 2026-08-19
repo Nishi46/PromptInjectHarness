@@ -13,7 +13,7 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from injection_pareto.adapters import EpisodeResult, run_episode
+from injection_pareto.adapters import EpisodeResult, run_episode, run_mcp_episode
 from injection_pareto.cache import ResponseCache
 from injection_pareto.clients.base import ModelClient
 from injection_pareto.clients.factory import build_model_client
@@ -134,6 +134,7 @@ def _run_point(
     provider_semaphores: dict[str, threading.Semaphore],
     build_client_fn: Callable[..., ModelClient],
     run_episode_fn: Callable[..., EpisodeResult],
+    run_mcp_episode_fn: Callable[..., object],
 ) -> tuple[_Point, Exception | None]:
     """Runs exactly one episode. Returns `(point, None)` on success or
     `(point, exception)` on failure -- never raises, so one bad point (a
@@ -141,7 +142,12 @@ def _run_point(
     the rest of the sweep. Each call opens its own SQLite connection
     (required for thread-safety; the schema's WAL mode + busy_timeout,
     S1-03, exist specifically so concurrent connections can write without
-    serializing on the rollback journal)."""
+    serializing on the rollback journal).
+
+    `point.spec.suite == "mcp"` (S3-06) routes to `run_mcp_episode_fn`
+    instead of `run_episode_fn` -- everything else about a point (creating
+    its `run` row, checking whether it's already done, bounding
+    concurrency) is suite-agnostic and untouched by this branch."""
     semaphore = provider_semaphores.get(point.spec.model.provider)
     if semaphore is not None:
         semaphore.acquire()
@@ -150,18 +156,30 @@ def _run_point(
         try:
             client = build_client_fn(point.spec.model, cache=cache, no_cache=no_cache)
             defense_stack = DefenseStack([resolve_defense(point.spec.defense)])
-            run_episode_fn(
-                conn=conn,
-                run_id=point.run_id,
-                suite_name=point.spec.suite,
-                user_task_id=point.task,
-                injection_task_id=point.spec.injection_task,
-                model_client=client,
-                defense_stack=defense_stack,
-                defense_name=point.spec.defense,
-                model_name=point.spec.model.model,
-                attack_name=point.spec.attack,
-            )
+            if point.spec.suite == "mcp":
+                run_mcp_episode_fn(
+                    conn=conn,
+                    run_id=point.run_id,
+                    user_task_id=point.task,
+                    poisoned_case_id=point.spec.injection_task,
+                    model_client=client,
+                    defense_stack=defense_stack,
+                    defense_name=point.spec.defense,
+                    model_name=point.spec.model.model,
+                )
+            else:
+                run_episode_fn(
+                    conn=conn,
+                    run_id=point.run_id,
+                    suite_name=point.spec.suite,
+                    user_task_id=point.task,
+                    injection_task_id=point.spec.injection_task,
+                    model_client=client,
+                    defense_stack=defense_stack,
+                    defense_name=point.spec.defense,
+                    model_name=point.spec.model.model,
+                    attack_name=point.spec.attack,
+                )
             return point, None
         finally:
             conn.close()
@@ -181,15 +199,17 @@ def run_sweep(
     cache_dir: str | Path = ".cache/responses",
     show_progress: bool = True,
     run_episode_fn: Callable[..., EpisodeResult] = run_episode,
+    run_mcp_episode_fn: Callable[..., object] = run_mcp_episode,
     build_client_fn: Callable[..., ModelClient] = build_model_client,
 ) -> SweepSummary:
     """Drives every point in `config`'s `models × defenses × suites ×
-    attacks × tasks` grid through `run_episode_fn`, skipping points that
+    attacks × tasks` grid through `run_episode_fn` (or, for a `suite ==
+    "mcp"` point -- S3-06, `run_mcp_episode_fn`), skipping points that
     already have a matching episode in the trace DB (resumable across
     process restarts) and bounding concurrency both overall (`concurrency`)
     and per model provider (`provider_concurrency`, Appendix A.3's rate
-    limits). `run_episode_fn`/`build_client_fn` are injectable so tests can
-    substitute fakes without real model calls.
+    limits). `run_episode_fn`/`run_mcp_episode_fn`/`build_client_fn` are
+    injectable so tests can substitute fakes without real model calls.
     """
     run_specs = expand_run_specs(config)
     config_hash = _config_hash(config)
@@ -237,6 +257,7 @@ def run_sweep(
                     provider_semaphores=semaphores,
                     build_client_fn=build_client_fn,
                     run_episode_fn=run_episode_fn,
+                    run_mcp_episode_fn=run_mcp_episode_fn,
                 )
                 for point in pending
             ]

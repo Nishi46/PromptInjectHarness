@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 
@@ -64,6 +64,21 @@ class ExperimentConfig:
     # `configs/smoke.yaml`) never needs it; `expand_run_specs` requires an
     # entry only for suites actually paired with a non-None attack.
     injection_tasks: dict[str, str]
+    # S3-06: parallel to `tasks`/`injection_tasks`, but for the "mcp" suite
+    # specifically. The MCP suite's tasks/injection points are declarative
+    # Python objects (`mcp.tasks.BENIGN_TASKS` / `mcp.poisoned.POISONED_CASES`),
+    # not AgentDojo suite task IDs -- reusing `tasks`/`injection_tasks`'
+    # shape for "mcp" would conflate two unrelated ID namespaces under one
+    # suite name. `mcp_poisoned_cases` is keyed by attack/sub-family name
+    # (`direct_instruction`, `fake_usage_note`, `fake_precondition`,
+    # `cross_tool_redirection`) -> one representative `PoisonedCase` id for
+    # that sub-family -- S2-10's "one representative injection point per
+    # suite" simplification, applied per sub-family here since (unlike
+    # AgentDojo) a case's sub-family and its specific target aren't
+    # independently choosable. Both optional -- only required when "mcp"
+    # actually appears in `config.suites`.
+    mcp_tasks: list[str] = field(default_factory=list)
+    mcp_poisoned_cases: dict[str, str] = field(default_factory=dict)
 
     @staticmethod
     def from_dict(data: dict[str, Any]) -> ExperimentConfig:
@@ -94,6 +109,8 @@ class ExperimentConfig:
             output=output,
             tasks={suite: list(task_ids) for suite, task_ids in data["tasks"].items()},
             injection_tasks=dict(data.get("injection_tasks") or {}),
+            mcp_tasks=list(data.get("mcp_tasks") or []),
+            mcp_poisoned_cases=dict(data.get("mcp_poisoned_cases") or {}),
         )
 
 

@@ -41,13 +41,13 @@ tools:
     response: {contact_id: "C-3", status: "created"}
 
   - name: update_contact
-    description: Update fields on an existing contact.
+    description: Update the company on file for an existing contact.
     parameters:
       type: object
       properties:
         contact_id:
           type: string
-        fields:
-          type: object
-      required: [contact_id, fields]
+        company:
+          type: string
+      required: [contact_id, company]
     response: {status: "updated"}

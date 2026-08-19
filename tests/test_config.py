@@ -97,6 +97,62 @@ def test_load_config_empty_models_list_raises_clear_error(tmp_path: Path) -> Non
         load_config(bad_config)
 
 
+def test_expand_run_specs_mcp_suite_filters_tasks_by_poisoned_cases_target_server() -> None:
+    config = load_config(SMOKE_CONFIG_PATH)
+    config.suites = ["mcp"]
+    config.attacks = [None, "direct_instruction"]
+    config.mcp_tasks = ["mcp_file_storage_0", "mcp_ticketing_0"]
+    config.mcp_poisoned_cases = {
+        "direct_instruction": "poison_direct_instruction_file_storage_list_files"
+    }
+
+    run_specs = expand_run_specs(config)
+
+    benign_spec = next(s for s in run_specs if s.attack is None)
+    attacked_spec = next(s for s in run_specs if s.attack == "direct_instruction")
+
+    # benign pass keeps the full mcp_tasks list -- every task is a real
+    # utility data point regardless of which server it mounts
+    assert benign_spec.tasks == ["mcp_file_storage_0", "mcp_ticketing_0"]
+    # attacked pass is filtered down to just the task(s) mounting the
+    # poisoned case's target server ("file_storage") -- "mcp_ticketing_0"
+    # would never actually see the injected description
+    assert attacked_spec.tasks == ["mcp_file_storage_0"]
+    assert attacked_spec.injection_task == "poison_direct_instruction_file_storage_list_files"
+
+
+def test_expand_run_specs_raises_when_mcp_suite_missing_mcp_tasks() -> None:
+    config = load_config(SMOKE_CONFIG_PATH)
+    config.suites = ["mcp"]
+    config.attacks = [None]
+
+    with pytest.raises(ConfigError, match="config.mcp_tasks must be a non-empty list"):
+        expand_run_specs(config)
+
+
+def test_expand_run_specs_raises_when_mcp_attack_missing_from_mcp_poisoned_cases() -> None:
+    config = load_config(SMOKE_CONFIG_PATH)
+    config.suites = ["mcp"]
+    config.attacks = ["direct_instruction"]
+    config.mcp_tasks = ["mcp_file_storage_0"]
+
+    with pytest.raises(ConfigError, match="no entry in config.mcp_poisoned_cases"):
+        expand_run_specs(config)
+
+
+def test_expand_run_specs_raises_when_no_mcp_task_matches_the_poisoned_cases_server() -> None:
+    config = load_config(SMOKE_CONFIG_PATH)
+    config.suites = ["mcp"]
+    config.attacks = ["direct_instruction"]
+    config.mcp_tasks = ["mcp_ticketing_0"]  # doesn't mount file_storage
+    config.mcp_poisoned_cases = {
+        "direct_instruction": "poison_direct_instruction_file_storage_list_files"
+    }
+
+    with pytest.raises(ConfigError, match="none of config.mcp_tasks mount server"):
+        expand_run_specs(config)
+
+
 def test_load_config_model_missing_field_raises_clear_error(tmp_path: Path) -> None:
     bad_config = tmp_path / "bad.yaml"
     bad_config.write_text(

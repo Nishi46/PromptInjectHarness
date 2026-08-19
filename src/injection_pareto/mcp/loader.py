@@ -7,6 +7,18 @@ import yaml
 
 from injection_pareto.mcp.types import MCPSpecError, MockServer, MockTool, ResponseVariant
 
+# Where the S3-02 server specs actually live -- resolved relative to this
+# package (not a test-only path derivation), so production code (S3-06's
+# adapter) and tests both resolve the same directory.
+SERVERS_DIR = Path(__file__).parent / "servers"
+
+
+def load_named_server(name: str) -> MockServer:
+    """Loads one of the real S3-02 servers by name (its `mcp/servers/<name>.yaml`
+    file stem) -- the lookup `adapters/mcp_adapter.py::run_mcp_episode` uses
+    to mount an `MCPUserTask`'s declared `servers`."""
+    return load_server(SERVERS_DIR / f"{name}.yaml")
+
 
 def load_server(path: str | Path) -> MockServer:
     """Parses one YAML mock-server spec into a `MockServer`. Raises

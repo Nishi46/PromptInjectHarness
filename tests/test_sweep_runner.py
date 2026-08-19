@@ -2,7 +2,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from injection_pareto.adapters import EpisodeResult
+from injection_pareto.adapters import EpisodeResult, MCPEpisodeResult
 from injection_pareto.clients.base import ModelClient, ModelRequest, ModelResponse
 from injection_pareto.config.schema import ExperimentConfig, ModelSpec, OutputConfig
 from injection_pareto.defenses.stack import DefenseStack
@@ -196,3 +196,60 @@ def test_a_failing_point_does_not_abort_the_rest_of_the_sweep(tmp_path: Path) ->
     assert summary.failed == 1
     assert summary.failures[0].task == "user_task_0"
     assert "simulated transient failure" in summary.failures[0].error
+
+
+def test_mcp_suite_points_dispatch_to_run_mcp_episode_fn(tmp_path: Path) -> None:
+    """S3-06: a `suite == "mcp"` point must route to `run_mcp_episode_fn`,
+    never `run_episode_fn` -- proven here by making `run_episode_fn` raise
+    if it's ever called, exercising the dispatch added to `_run_point`."""
+    trace_db = tmp_path / "trace.db"
+    config = ExperimentConfig(
+        name="mcp-dispatch-test",
+        models=[ModelSpec(id="L1", provider="ollama", model="llama3.2:3b")],
+        defenses=["no_defense"],
+        suites=["mcp"],
+        attacks=[None],
+        output=OutputConfig(trace_db=str(trace_db)),
+        tasks={},
+        injection_tasks={},
+        mcp_tasks=["mcp_file_storage_0"],
+        mcp_poisoned_cases={},
+    )
+
+    def _unexpected_run_episode(**kwargs: Any) -> EpisodeResult:
+        raise AssertionError("run_episode_fn should not be called for an 'mcp' suite point")
+
+    calls: list[str] = []
+
+    def _fake_run_mcp_episode(
+        *,
+        conn: sqlite3.Connection,
+        run_id: int,
+        user_task_id: str,
+        poisoned_case_id: str | None,
+        model_client: ModelClient,
+        defense_stack: DefenseStack,
+        defense_name: str,
+        model_name: str,
+    ) -> MCPEpisodeResult:
+        calls.append(user_task_id)
+        episode_id = insert_episode(
+            conn, run_id=run_id, task_id=user_task_id, started_at="t1", utility=True
+        )
+        return MCPEpisodeResult(
+            episode_id=episode_id, utility=True, security=None, step_count=1, tool_call_count=0
+        )
+
+    summary = run_sweep(
+        config,
+        concurrency=1,
+        show_progress=False,
+        cache_dir=tmp_path / "cache",
+        run_episode_fn=_unexpected_run_episode,
+        run_mcp_episode_fn=_fake_run_mcp_episode,
+        build_client_fn=_fake_build_client,
+    )
+
+    assert calls == ["mcp_file_storage_0"]
+    assert summary.completed == 1
+    assert summary.failed == 0
