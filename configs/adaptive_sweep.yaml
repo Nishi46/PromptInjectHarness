@@ -1,0 +1,64 @@
+# Sprint 4's adaptive-attack sweep (S4-05): 6 defenses × 5 attack families ×
+# the same 2 local models validated in S2-11/S3-06 × 1 task, each point run
+# as an up-to-20-round adaptive trial (`ADAPTIVE_ROUND_BUDGET`,
+# `adaptive/trial.py`) instead of a single static episode.
+#
+# No `null` (benign) pass here, unlike `static_sweep.yaml`/`mcp_sweep.yaml`:
+# `expand_adaptive_trial_points` skips benign points entirely (there's
+# nothing adaptive about them) -- reuse `static_sweep.yaml`'s own trace DB
+# for the utility baseline instead of duplicating it.
+#
+# Grid arithmetic (`injection_pareto adaptive-run` prints the real trial
+# count from the actual config before running, but written out here so the
+# multiplier is visible before running it at all):
+#   6 defenses × 5 families × 2 models × 1 task = 60 trials
+#   60 trials × 20 rounds/trial (budget, before any early stop) = 1,200 episodes, worst case
+#   + up to 1 extra mutator LLM call per round that doesn't succeed
+# Early stopping (S4-04) makes the real number far smaller in practice for
+# any defense an attack actually breaks -- but budget the full 1,200-episode
+# figure until a real `--sample-fraction` run says otherwise (S4-05's
+# "cost risk" checkpoint).
+#
+# Only `user_task_0` (not S2-11's full 3-task list) -- S4-05's own plan
+# calls for "a small task list", deliberately smaller than the static
+# baseline's, given the 20x round multiplier per point.
+
+name: adaptive_sweep
+
+models:
+  - id: L1
+    provider: ollama
+    model: llama3.2:3b
+    digest: sha256:a80c4f17acd5
+  - id: L2
+    provider: ollama
+    model: llama3.1:latest
+    digest: sha256:46e0c10c039e
+
+defenses:
+  - no_defense
+  - spotlighting
+  - instructional_prevention
+  - guard_model
+  - canary
+  - tool_allowlist
+
+suites:
+  - workspace
+
+attacks:
+  - naive
+  - ignore_previous
+  - important_instructions
+  - context_completion
+  - encoding_obfuscation
+
+tasks:
+  workspace:
+    - user_task_0
+
+injection_tasks:
+  workspace: injection_task_0
+
+output:
+  trace_db: runs/local/adaptive_sweep/trace.db

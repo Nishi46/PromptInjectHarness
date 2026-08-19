@@ -78,10 +78,20 @@ _FAMILY_MARKERS: dict[str, tuple[str, ...]] = {
 }
 
 
-def _looks_in_family(family: str, payload: str) -> bool:
+def _looks_in_family(family: str, payload: str, *, goal: str = "") -> bool:
+    """`goal` is stripped out of `payload` before scanning for markers --
+    found via a real `adaptive-run` smoke test (S4-05): a live model's
+    otherwise-fine `naive`-family rewrite was flagged as drifted purely
+    because the *task's own goal text* happened to contain the word
+    "important" (an email subject line reading 'Important message!'),
+    colliding with the `important_instructions` marker even though nothing
+    about the rewrite added jailbreak framing. The goal is guaranteed
+    legitimate content in every family's payload (every template embeds it
+    verbatim), so it should never itself count as evidence of drift."""
     if not payload.strip():
         return False
-    lowered = payload.lower()
+    scanned = payload.replace(goal, "") if goal else payload
+    lowered = scanned.lower()
     if family == "naive":
         other_markers = [m for markers in _FAMILY_MARKERS.values() for m in markers]
         return not any(marker in lowered for marker in other_markers)
@@ -177,7 +187,7 @@ def mutate_payload(
     if responses is not None:
         responses.append(response)
     candidate = _clean_response_text(response.text)
-    if _looks_in_family(family, candidate):
+    if _looks_in_family(family, candidate, goal=goal):
         return candidate
 
     constraint = FAMILY_CONSTRAINTS[family]
@@ -196,7 +206,7 @@ def mutate_payload(
     if responses is not None:
         responses.append(retry_response)
     retry_candidate = _clean_response_text(retry_response.text)
-    if _looks_in_family(family, retry_candidate):
+    if _looks_in_family(family, retry_candidate, goal=goal):
         return retry_candidate
 
     return current_payload

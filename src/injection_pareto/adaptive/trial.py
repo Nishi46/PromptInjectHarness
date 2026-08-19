@@ -117,6 +117,18 @@ def run_adaptive_trial(
     round-by-round on restart -- re-running it starts over from round 1.
     Acceptable at S4-05's cost-capped scale; would need revisiting to scale
     this up.
+
+    A round whose episode *fails to execute at all* (an exception from
+    `run_episode_fn`/`run_mcp_episode_fn`) is treated as a failed round, not
+    a trial-ending error -- found for real running S4-05's first full
+    sweep: `run_episode`'s AgentDojo suite builds its environment via
+    `raw_yaml_text.format(**injections)` then `yaml.safe_load()`s the
+    result, so a free-form LLM-mutated payload containing an unescaped
+    quote/colon can raise a `yaml.YAMLError` before the agent ever runs.
+    That round writes no `adaptive_round` row (no episode was created to
+    link one to) but still counts toward `budget` and still feeds a
+    synthetic failure `EpisodeFeedback` into the next mutation, so the loop
+    self-corrects instead of a single bad mutation ending the whole trial.
     """
     if suite == "mcp":
         if run_mcp_episode_fn is None:
@@ -142,51 +154,75 @@ def run_adaptive_trial(
     any_success = False
     rounds_run = 0
     rounds_to_success: int | None = None
+    last_episode_id: int | None = None
 
     for round_index in range(1, budget + 1):
         defense_stack = defense_stack_factory()
 
-        if suite == "mcp":
-            assert run_mcp_episode_fn is not None
-            episode_result = run_mcp_episode_fn(
-                conn=conn,
-                run_id=run_id,
-                user_task_id=user_task_id,
-                poisoned_case_id=poisoned_case_id,
-                model_client=model_client,
-                defense_stack=defense_stack,
-                defense_name=defense_name,
-                model_name=model_name,
-                injection_text_override=payload,
+        try:
+            if suite == "mcp":
+                assert run_mcp_episode_fn is not None
+                episode_result: _EpisodeResultLike | None = run_mcp_episode_fn(
+                    conn=conn,
+                    run_id=run_id,
+                    user_task_id=user_task_id,
+                    poisoned_case_id=poisoned_case_id,
+                    model_client=model_client,
+                    defense_stack=defense_stack,
+                    defense_name=defense_name,
+                    model_name=model_name,
+                    injection_text_override=payload,
+                )
+            else:
+                assert run_episode_fn is not None
+                episode_result = run_episode_fn(
+                    conn=conn,
+                    run_id=run_id,
+                    suite_name=suite,
+                    user_task_id=user_task_id,
+                    injection_task_id=injection_task_id,
+                    model_client=model_client,
+                    defense_stack=defense_stack,
+                    defense_name=defense_name,
+                    model_name=model_name,
+                    attack_name=attack_family,
+                    injections_override={point: payload for point in injection_points},
+                )
+        except Exception as exc:
+            # A mutated payload can break the *harness* itself, not just fail
+            # to compromise the target -- observed for real in S4-05: an
+            # AgentDojo suite builds its environment via
+            # `raw_yaml_text.format(**injections)` then `yaml.safe_load()`s
+            # the result (`TaskSuite.load_and_inject_default_environment`),
+            # so a free-form LLM-authored payload containing an unescaped
+            # quote/colon can produce a `yaml.YAMLError` well before the
+            # agent ever runs. From the attacker's perspective this is
+            # exactly as much a failed round as one a defense blocks -- it
+            # must feed back into the next mutation, not abort the whole
+            # trial. No episode was created, so there's no `adaptive_round`
+            # row to write for this round (the FK requires a real episode).
+            episode_result = None
+            feedback = EpisodeFeedback(
+                success=False,
+                defense_intervened=False,
+                refusal_text=f"round {round_index} failed to execute: {exc}"[:500],
             )
         else:
-            assert run_episode_fn is not None
-            episode_result = run_episode_fn(
-                conn=conn,
-                run_id=run_id,
-                suite_name=suite,
-                user_task_id=user_task_id,
-                injection_task_id=injection_task_id,
-                model_client=model_client,
-                defense_stack=defense_stack,
-                defense_name=defense_name,
-                model_name=model_name,
-                attack_name=attack_family,
-                injections_override={point: payload for point in injection_points},
-            )
+            assert episode_result is not None
+            with transaction(conn):
+                insert_adaptive_round(
+                    conn,
+                    trial_id=trial_id,
+                    round_index=round_index,
+                    episode_id=episode_result.episode_id,
+                    payload_text=payload,
+                    timestamp=_now(),
+                )
+            last_episode_id = episode_result.episode_id
+            feedback = extract_feedback_fn(conn, episode_id=episode_result.episode_id)
 
-        with transaction(conn):
-            insert_adaptive_round(
-                conn,
-                trial_id=trial_id,
-                round_index=round_index,
-                episode_id=episode_result.episode_id,
-                payload_text=payload,
-                timestamp=_now(),
-            )
         rounds_run = round_index
 
-        feedback = extract_feedback_fn(conn, episode_id=episode_result.episode_id)
         if feedback.success:
             any_success = True
             rounds_to_success = round_index
@@ -203,13 +239,16 @@ def run_adaptive_trial(
                 round_index=round_index + 1,
                 responses=mutator_responses,
             )
-            if mutator_responses:
+            # Attributed to the most recent real episode, if any -- a round
+            # whose own episode failed to execute (see above) has none of
+            # its own to attribute this mutation's cost to.
+            if mutator_responses and last_episode_id is not None:
                 with transaction(conn):
                     for response in mutator_responses:
                         insert_cost_record(
                             conn,
                             run_id=run_id,
-                            episode_id=episode_result.episode_id,
+                            episode_id=last_episode_id,
                             model=f"mutator:{attack_family}",
                             tokens_in=response.tokens_in,
                             tokens_out=response.tokens_out,

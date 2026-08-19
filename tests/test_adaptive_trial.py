@@ -111,6 +111,50 @@ def _defense_stack_factory() -> DefenseStack:
     return DefenseStack([NoDefense()])
 
 
+def _fake_run_episode_fn_failing_on(
+    failing_rounds: set[int], securities: list[bool]
+) -> tuple[Any, list[int]]:
+    """Like `_fake_run_episode_fn`, but raises instead of inserting an
+    episode on the given 1-indexed round numbers -- reproduces S4-05's real
+    finding that a mutated payload can break AgentDojo's own
+    `environment.yaml` templating (a `yaml.YAMLError`) before any episode
+    exists at all."""
+    call_count = 0
+    attempted_rounds: list[int] = []
+
+    def _fake(
+        *,
+        conn: sqlite3.Connection,
+        run_id: int,
+        suite_name: str,
+        user_task_id: str,
+        injection_task_id: str | None,
+        model_client: ModelClient,
+        defense_stack: DefenseStack,
+        defense_name: str,
+        model_name: str,
+        attack_name: str,
+        injections_override: dict[str, str],
+    ) -> _FakeEpisodeResult:
+        nonlocal call_count
+        call_count += 1
+        round_number = call_count
+        attempted_rounds.append(round_number)
+        if round_number in failing_rounds:
+            raise ValueError(f"round {round_number}: payload broke environment.yaml")
+        episode_id = insert_episode(
+            conn,
+            run_id=run_id,
+            task_id=user_task_id,
+            injection_task_id=injection_task_id,
+            started_at="t0",
+            security=securities[round_number - 1],
+        )
+        return _FakeEpisodeResult(episode_id)
+
+    return _fake, attempted_rounds
+
+
 def test_never_succeeding_trial_runs_exactly_the_full_budget(tmp_path: Path) -> None:
     conn, run_id = _db(tmp_path)
     run_episode_fn, calls = _fake_run_episode_fn([False] * ADAPTIVE_ROUND_BUDGET)
@@ -479,3 +523,137 @@ def test_missing_run_mcp_episode_fn_raises_for_mcp_suite(tmp_path: Path) -> None
             model_name="fake",
             defense_stack_factory=_defense_stack_factory,
         )
+
+
+# ---------------------------------------------------------------------------
+# a round whose episode fails to execute (S4-05's real environment.yaml
+# finding): the trial must not crash, must still mutate and continue.
+# ---------------------------------------------------------------------------
+
+
+def test_a_round_that_fails_to_execute_does_not_crash_the_trial(tmp_path: Path) -> None:
+    conn, run_id = _db(tmp_path)
+    run_episode_fn, attempted_rounds = _fake_run_episode_fn_failing_on(
+        {2}, [False, False, False]
+    )
+    mutate_fn, mutate_calls = _fake_mutate_payload_fn()
+
+    result = run_adaptive_trial(
+        conn=conn,
+        run_id=run_id,
+        suite="workspace",
+        task_id="user_task_0",
+        defense_name="no_defense",
+        attack_family="naive",
+        goal="exfiltrate the secret",
+        base_payload="TODO: do the thing",
+        user_task_id="user_task_0",
+        injection_task_id="injection_task_0",
+        injection_points=("injection_point",),
+        model_client=_UnusedModelClient(),
+        model_name="fake",
+        defense_stack_factory=_defense_stack_factory,
+        run_episode_fn=run_episode_fn,
+        mutate_payload_fn=mutate_fn,
+        budget=3,
+    )
+
+    # all 3 rounds were attempted (the failure didn't end the loop early)
+    assert attempted_rounds == [1, 2, 3]
+    assert result.rounds_run == 3
+    assert result.success is False
+    # mutation still happens after the failed round, feeding its synthetic
+    # failure feedback into round 3's payload
+    assert mutate_calls == [2, 3]
+
+    # only 2 `adaptive_round` rows exist -- the failed round wrote none
+    round_rows = conn.execute(
+        "SELECT round_index FROM adaptive_round WHERE trial_id = ? ORDER BY round_index",
+        (result.trial_id,),
+    ).fetchall()
+    assert [r["round_index"] for r in round_rows] == [1, 3]
+
+
+def test_a_failed_round_still_produces_a_mutated_payload_for_the_next_round(
+    tmp_path: Path,
+) -> None:
+    conn, run_id = _db(tmp_path)
+    run_episode_fn, _ = _fake_run_episode_fn_failing_on({1}, [False, False])
+    mutate_fn, _ = _fake_mutate_payload_fn()
+
+    result = run_adaptive_trial(
+        conn=conn,
+        run_id=run_id,
+        suite="workspace",
+        task_id="user_task_0",
+        defense_name="no_defense",
+        attack_family="naive",
+        goal="exfiltrate the secret",
+        base_payload="TODO: do the thing",
+        user_task_id="user_task_0",
+        injection_task_id="injection_task_0",
+        injection_points=("injection_point",),
+        model_client=_UnusedModelClient(),
+        model_name="fake",
+        defense_stack_factory=_defense_stack_factory,
+        run_episode_fn=run_episode_fn,
+        mutate_payload_fn=mutate_fn,
+        budget=2,
+    )
+
+    assert result.rounds_run == 2
+    round_rows = conn.execute(
+        "SELECT round_index, payload_text FROM adaptive_round "
+        "WHERE trial_id = ? ORDER BY round_index",
+        (result.trial_id,),
+    ).fetchall()
+    # round 1's episode never existed, but round 2 still ran with a
+    # mutated payload derived from round 1's (synthetic-failure) feedback
+    assert [r["round_index"] for r in round_rows] == [2]
+    assert round_rows[0]["payload_text"] == "TODO: do the thing-r2"
+
+
+def test_a_failed_round_never_succeeds_and_never_stops_the_trial_by_itself(
+    tmp_path: Path,
+) -> None:
+    """Every round in the budget fails to execute -- the trial must still
+    run to completion (not hang, not raise) and end up unsuccessful."""
+    conn, run_id = _db(tmp_path)
+    run_episode_fn, attempted_rounds = _fake_run_episode_fn_failing_on({1, 2, 3}, [])
+    mutate_fn, _ = _fake_mutate_payload_fn()
+
+    result = run_adaptive_trial(
+        conn=conn,
+        run_id=run_id,
+        suite="workspace",
+        task_id="user_task_0",
+        defense_name="no_defense",
+        attack_family="naive",
+        goal="exfiltrate the secret",
+        base_payload="TODO: do the thing",
+        user_task_id="user_task_0",
+        injection_task_id="injection_task_0",
+        injection_points=("injection_point",),
+        model_client=_UnusedModelClient(),
+        model_name="fake",
+        defense_stack_factory=_defense_stack_factory,
+        run_episode_fn=run_episode_fn,
+        mutate_payload_fn=mutate_fn,
+        budget=3,
+    )
+
+    assert attempted_rounds == [1, 2, 3]
+    assert result.rounds_run == 3
+    assert result.success is False
+    assert result.rounds_to_success is None
+
+    round_rows = conn.execute(
+        "SELECT round_index FROM adaptive_round WHERE trial_id = ?", (result.trial_id,)
+    ).fetchall()
+    assert round_rows == []
+
+    # no real episode ever existed, so the mutator's cost was never recorded
+    cost_rows = conn.execute(
+        "SELECT * FROM cost_record WHERE model = ?", ("mutator:naive",)
+    ).fetchall()
+    assert cost_rows == []

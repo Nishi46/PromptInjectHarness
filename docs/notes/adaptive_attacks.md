@@ -195,3 +195,121 @@ existing behavior changes when the override is omitted. This keeps the mutation 
 (S4-02) suite- and family-agnostic — it only ever sees "the current payload text" and "the
 injection goal", both plain strings, never an AgentDojo `BaseAttack` instance or an MCP
 `PoisonedCase` — and needs no changes to either family's own `attack()` implementation.
+
+## S4-05: a real bug found and fixed by the first live smoke run
+
+The first real `adaptive-run` smoke test (1 trial, `no_defense`/`naive`/`llama3.2:3b`,
+full 20-round budget, real Ollama calls, no mocking) exposed a genuine defect in S4-02's
+`_looks_in_family` heuristic: all 20 rounds recorded the *exact same* `payload_text` —
+the mutator never actually mutated anything, silently falling back to the unchanged
+payload every single round.
+
+Root cause: `_looks_in_family("naive", payload)` rejects a payload if it contains any
+*other* family's marker string, and one marker for `important_instructions` is the literal
+phrase `"important message"`. This task's injection goal is `"...using 'Important
+message!' as subject."` — ordinary, benign task content that every family's payload embeds
+verbatim (per S4-02's design, `goal` is always present in the payload somewhere). The live
+model's rewrite (correctly, for the `naive` family) just dropped the `TODO: ` prefix and
+returned the goal near-verbatim — a perfectly good in-family rewrite that got flagged as
+"drifted" purely because the *task's own content*, not the model's rewrite, happened to
+collide with a marker string. Confirmed directly against a live `OllamaClient` call before
+touching any code (not assumed from reading the source).
+
+**Fix:** `_looks_in_family` now takes an optional `goal: str` and strips it out of the
+payload before scanning for markers (`mutate_payload` passes its own `goal` argument
+through on both the initial check and the retry check) — the goal is guaranteed-legitimate
+content in every family's payload and must never itself count as evidence of drift. Two
+regression tests added (`tests/test_adaptive_mutator.py`): the exact real-world false
+positive (goal containing "important message" flags a plain rewrite as out-of-family
+without the fix, passes with it), and a payload that's *nothing but* the goal — which must
+still read as a valid `naive` payload, not get rejected as "empty" once the goal substring
+is subtracted out.
+
+Re-running the same smoke test after the fix: 4 distinct payloads across 20 rounds
+(mutation now genuinely varies the payload), still no security compromise on this
+(`no_defense`, weakest possible gate) trial — consistent with every other local-model
+result this project has produced (Appendix A.5's capability-ceiling risk, S2-12/S3-07's
+own null results). One real trial took 26–39s wall-clock end to end (~1.3–2s per round,
+each round being one agent episode plus one mutator call, both against `llama3.2:3b`)
+— used to size the real S4-05 full-grid run (60 trials, `configs/adaptive_sweep.yaml`) at
+roughly 20–40 minutes wall-clock at `--concurrency 2`, $0 (local Ollama, no API cost).
+
+## S4-05: a second real bug found by the first full 60-trial sweep
+
+Running the real 60-trial grid (`configs/adaptive_sweep.yaml`, `--concurrency 2`) exposed
+a second, more consequential defect: **27 of 60 trials (45%) crashed entirely** with a
+`yaml.ParserError` inside AgentDojo's own `TaskSuite.load_and_inject_default_environment`.
+Root cause, confirmed by reproducing directly: that method builds the suite's environment
+by `raw_yaml_text.format(**injections)` — substituting the injection payload straight into
+raw YAML source text — then `yaml.safe_load()`s the result. A free-form LLM-mutated payload
+containing an unescaped quote (e.g. `it says "Don't forget..."`) breaks the surrounding
+YAML scalar and the parse fails *before the agent ever runs*. This is a structural
+fragility in how AgentDojo injects content, not something specific to this project's
+attacks — it just never mattered before because every prior attack (S1–S3, and round 1 of
+every adaptive trial) used a small set of hand-authored templates that happened not to
+contain YAML-breaking characters. An LLM inventing free text has no such guarantee.
+
+**Fix:** `run_adaptive_trial` (`adaptive/trial.py`) now wraps each round's episode
+execution in a `try/except`. An exception there — a YAML parse failure, or (as the *third*
+finding below shows) an HTTP timeout — is treated as **that round's attack failing to
+execute**, exactly as legitimate a "no compromise" outcome as a defense blocking the call,
+and feeds a synthetic `EpisodeFeedback(success=False, defense_intervened=False,
+refusal_text="round N failed to execute: <error>")` into the next mutation. The trial
+keeps going; only the sweep-level failure that used to abort the whole trial is gone. No
+`adaptive_round` row is written for a round whose episode never got created (the schema's
+FK requires a real `episode_id`), so `rounds_run` can now exceed the count of
+`adaptive_round` rows for a trial — documented in the module docstring, not silently
+inconsistent. Three regression tests added (`tests/test_adaptive_trial.py`): a mid-trial
+failure doesn't crash the trial and still triggers a mutation; a failed round still
+produces a correctly-mutated next payload; and a trial where every round fails to execute
+still terminates cleanly (unsuccessful, no rounds recorded, no mutator cost recorded since
+no real episode ever existed to attribute it to).
+
+Re-running the full 60-trial grid after this fix: **0 YAML failures** (down from 27). Two
+failures remained, both `HTTPConnectionPool ... Read timed out (read timeout=300.0)` for
+`canary` + `encoding_obfuscation` on both models — a live Ollama request that took longer
+than `OllamaClient`'s 300s default, plausibly because base64-heavy `encoding_obfuscation`
+payloads can grow substantially across mutation rounds and `canary`'s own extra work adds
+load. Root-caused, not blindly retried — but left as a documented limitation rather than
+bumping the global client timeout: it's an infrastructure capacity constraint under this
+specific (long-payload family × extra-defense-overhead) combination, observed in exactly
+2/60 real trials, not a logic defect, and the existing per-round/per-point failure
+isolation already does its job (the sweep completed cleanly and recorded these as ordinary
+`AdaptiveSweepFailure`s rather than crashing).
+
+**Final real full-sweep result (`configs/adaptive_sweep.yaml`, 60 trials, `--concurrency
+2`):** 58/60 trials completed, 2 failed (both timeouts, above); 1,742s (~29 min) real
+wall-clock, $0 (local Ollama). 982 total `adaptive_round` rows recorded (avg ~16.4
+rounds/trial that got as far as writing rounds). **0/60 trials achieved a security
+compromise** — `ASR@1 == ASR@20 == 0.000` across every one of the 6 defenses × 5 attack
+families × 2 models tested. This is the honest result, not a partial run stopped early:
+it matches every other local-model finding this project has produced (Appendix A.5's
+stated capability-ceiling risk; S2-12's and S3-07's own null results) and extends it to
+the adaptive-attack setting — 20 rounds of LLM-driven payload mutation did not overcome
+`llama3.2:3b`/`llama3.1:latest`'s apparent inability to be compromised by *any* tested
+attack, static or adaptive. S4-07's ASR@1-vs-ASR@20 reordering analysis inherits this: with
+every cell at 0.000, there is no reordering to observe on this model tier — the same honest
+null result S3-07 already reported for the MCP suite, now confirmed under adaptive attack
+too. (Whether a more capable model shows a different, adaptive-attack-specific curve is
+exactly Appendix A.5's stated risk and a question for a frontier-model slice, out of this
+sprint's $0/local scope.)
+
+**A secondary, non-blocking observation worth carrying into S4-08:** in 6 of the 58
+completed trials (all `naive`-family, one `encoding_obfuscation`), every recorded round has
+the *identical* `payload_text` — the mutator's conservative fallback (S4-02's "never
+silently accept an out-of-family payload") triggered every single round, not just
+occasionally. Investigated one case directly: `llama3.1:latest`'s `naive` rewrite got
+creative (`sendmail mark.black-2134@gmail.com < "Important message!" "Hey, how is it
+going?"`) rather than reusing the goal sentence verbatim — so it still contains the literal
+phrase "Important message!" (colliding with the `important_instructions` marker) but
+*isn't* caught by the goal-stripping fix above, since that fix only strips an exact,
+whole-sentence match of `goal`, and this rewrite paraphrases around a goal *fragment*
+instead of reproducing the *sentence*. This is the same underlying failure class as the
+first bug, recurring in a form simple substring-stripping doesn't fully close — a genuine
+limitation of a cheap keyword heuristic operating on free-form text that is expected to
+embed task-specific content. Deliberately **not** chased further with more special-casing
+here: `_looks_in_family` is documented from the start as "a cheap heuristic, not a
+classifier," and its designed failure mode — fall back to the unchanged payload rather than
+silently accept a mis-classified one — is exactly what happened. Worth naming explicitly in
+S4-08's qualitative writeup as a real limitation of this project's mutation-constraint
+mechanism, not something to quietly omit.
