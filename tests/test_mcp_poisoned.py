@@ -15,19 +15,25 @@ def _load_target_server(case: PoisonedCase) -> MockServer:
 
 
 # ---------------------------------------------------------------------------
-# structure of the 40-case set
+# structure of the case set: the original 40 S3-04 cases (10 per
+# sub-family) plus S5-04's own `poison_body_exfil_email_get_email`
+# `direct_instruction` demonstration case (see
+# `docs/notes/architectural_defenses.md`'s "S5-04" section for why it's a
+# genuinely new case rather than a variant of an existing one).
 # ---------------------------------------------------------------------------
 
 
-def test_exactly_forty_cases_are_authored() -> None:
-    assert len(POISONED_CASES) == 40
+def test_exactly_forty_one_cases_are_authored() -> None:
+    assert len(POISONED_CASES) == 41
 
 
-def test_exactly_ten_cases_per_sub_family() -> None:
+def test_exactly_ten_cases_per_sub_family_plus_the_one_s5_04_case() -> None:
     counts = {family: 0 for family in SUB_FAMILIES}
     for case in POISONED_CASES:
         counts[case.sub_family] += 1
-    assert counts == dict.fromkeys(SUB_FAMILIES, 10)
+    expected = dict.fromkeys(SUB_FAMILIES, 10)
+    expected["direct_instruction"] += 1
+    assert counts == expected
 
 
 def test_every_case_has_a_unique_id() -> None:
@@ -154,7 +160,7 @@ def test_render_all_forty_final_descriptions_to_a_scratch_file(tmp_path: Path) -
     out_path.write_text("\n".join(lines))
 
     rendered = out_path.read_text()
-    assert rendered.count("[direct_instruction]") == 10
+    assert rendered.count("[direct_instruction]") == 11  # 10 S3-04 + S5-04's demo case
     assert rendered.count("[fake_usage_note]") == 10
     assert rendered.count("[fake_precondition]") == 10
     assert rendered.count("[cross_tool_redirection]") == 10

@@ -22,7 +22,8 @@ def _task(task_id: str) -> MCPInjectionTask:
 
 
 def test_one_injection_task_per_poisoned_case() -> None:
-    assert len(INJECTION_TASKS) == 40
+    # 40 S3-04 cases + S5-04's own `poison_body_exfil_email_get_email` demo.
+    assert len(INJECTION_TASKS) == 41
     assert {t.id for t in INJECTION_TASKS} == {c.id for c in POISONED_CASES}
 
 

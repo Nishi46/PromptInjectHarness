@@ -9,16 +9,24 @@ from injection_pareto.defenses.dual_llm import DualLLM
 from injection_pareto.defenses.guard_model import GuardModel
 from injection_pareto.defenses.instructional_prevention import InstructionalPrevention
 from injection_pareto.defenses.no_defense import NoDefense
+from injection_pareto.defenses.sink_policy import _DEFAULT_SINK_TOOLS_BY_SUITE
 from injection_pareto.defenses.spotlighting import Spotlighting
 from injection_pareto.defenses.tool_allowlist import ToolAllowlist
 
+
+def _default_capability_enforcement() -> Defense:
+    """S5-04's real per-suite sink-tool policy (`sink_policy.py`), wired in
+    as `capability_enforcement`'s registry default -- `CapabilityEnforcement`
+    itself stays a plain `sink_tools=None`-defaulting class (S5-03's own
+    tests exercise it against an injected fake policy); only the registry
+    needs to know about the real one, so this is the one small factory
+    function the S5-03 checklist flagged as possibly-needed."""
+    return CapabilityEnforcement(sink_tools=_DEFAULT_SINK_TOOLS_BY_SUITE)
+
+
 # One entry per config-declared defense name (RunSpec.defense). Sprint 2
 # (S2-03..S2-07) adds the real defenses here as they land; Sprint 5
-# (S5-01..) adds the architectural defenses. `CapabilityEnforcement`, like
-# `GuardModel`/`ToolAllowlist`, has every `__init__` param defaulted, so the
-# class itself is already a valid zero-arg `Callable[[], Defense]` -- no
-# separate factory function needed (its default `sink_tools=None` is an
-# empty policy until S5-04 wires the real one in via this same registry).
+# (S5-01..) adds the architectural defenses.
 _DEFENSE_REGISTRY: dict[str, Callable[[], Defense]] = {
     "no_defense": NoDefense,
     "spotlighting": Spotlighting,
@@ -27,7 +35,7 @@ _DEFENSE_REGISTRY: dict[str, Callable[[], Defense]] = {
     "tool_allowlist": ToolAllowlist,
     "canary": Canary,
     "dual_llm": DualLLM,
-    "capability_enforcement": CapabilityEnforcement,
+    "capability_enforcement": _default_capability_enforcement,
 }
 
 
