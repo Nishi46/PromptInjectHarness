@@ -3,8 +3,10 @@ from injection_pareto.scoring.utility import (
     InjectionFreeViolation,
     UtilityRate,
     UtilityRow,
+    UtilityTaxRow,
     assert_injection_free,
     benign_utility_rate,
+    utility_tax_table,
 )
 
 __all__ = [
@@ -12,6 +14,8 @@ __all__ = [
     "InjectionFreeViolation",
     "UtilityRate",
     "UtilityRow",
+    "UtilityTaxRow",
     "assert_injection_free",
     "benign_utility_rate",
+    "utility_tax_table",
 ]

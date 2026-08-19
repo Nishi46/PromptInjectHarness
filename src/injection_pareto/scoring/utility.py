@@ -103,3 +103,56 @@ def benign_utility_rate(
         )
         for (defense, model), values in grouped.items()
     ]
+
+
+@dataclass
+class UtilityTaxRow:
+    """One (target defense, model) pair's utility rate compared against a
+    baseline defense's rate on the same model -- S5-02's "utility tax"
+    number for an architectural defense like `dual_llm`."""
+
+    model: str
+    baseline_defense: str
+    baseline_rate: float | None
+    baseline_n: int
+    target_defense: str
+    target_rate: float | None
+    target_n: int
+    # baseline_rate - target_rate: positive means `target` completes fewer
+    # benign tasks than `baseline` (a real utility tax); negative means
+    # `target` did *better*. Report either honestly, never clamp at 0.
+    tax: float | None
+
+
+def utility_tax_table(
+    rates: Sequence[UtilityRate], *, baseline: str, target: str
+) -> list[UtilityTaxRow]:
+    """Pairs `baseline`'s and `target`'s `UtilityRate` per model, from a
+    `benign_utility_rate` result that already contains both defenses (they
+    coexist in one trace DB with no query change needed -- see
+    `scripts/generate_architectural_utility.py`). A model present for only
+    one of the two defenses gets `None` on the missing side and `tax=None`
+    -- never silently treated as a 0.0 rate, which would fabricate a tax
+    number that was never actually measured for that model.
+    """
+    by_key = {(r.defense, r.model): r for r in rates}
+    models = sorted({model for (defense, model) in by_key if defense in (baseline, target)})
+
+    rows = []
+    for model in models:
+        base = by_key.get((baseline, model))
+        tgt = by_key.get((target, model))
+        tax = base.rate - tgt.rate if base is not None and tgt is not None else None
+        rows.append(
+            UtilityTaxRow(
+                model=model,
+                baseline_defense=baseline,
+                baseline_rate=base.rate if base is not None else None,
+                baseline_n=base.n_episodes if base is not None else 0,
+                target_defense=target,
+                target_rate=tgt.rate if tgt is not None else None,
+                target_n=tgt.n_episodes if tgt is not None else 0,
+                tax=tax,
+            )
+        )
+    return rows

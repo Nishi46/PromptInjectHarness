@@ -1,0 +1,67 @@
+# S5-02/S5-05's D7 (and later D8) architectural-defense sweep on the MCP
+# suite. Same models/tasks/attacks as `configs/mcp_sweep.yaml` (S3-06) --
+# only `defenses` differs -- and **deliberately writes into that same
+# `output.trace_db` path**: the `no_defense` rows `mcp_sweep.yaml` already
+# populated become this sweep's comparison baseline for free, rather than
+# re-running a duplicate benign pass just to get a `no_defense` column to
+# compare against.
+#
+# S5-02 only runs this config's benign (`attack: null`) points -- the
+# utility-tax measurement over all 15 benign tasks. The attacked points
+# (all 4 sub-families) are deliberately deferred to S5-05, same rationale
+# as `configs/architectural_static_sweep.yaml`'s header comment. `defenses`
+# gains `capability_enforcement` once S5-03/S5-04 land it -- at that point
+# this same file (not a new one) is what S5-05 runs for the attacked passes.
+
+name: architectural_mcp_sweep
+
+models:
+  - id: L1
+    provider: ollama
+    model: llama3.2:3b
+    digest: sha256:a80c4f17acd5
+  - id: L2
+    provider: ollama
+    model: llama3.1:latest
+    digest: sha256:46e0c10c039e
+
+defenses:
+  - dual_llm
+
+suites:
+  - mcp
+
+attacks:
+  - null # benign pass -- S5-02's utility-tax measurement over all 15 tasks, run now
+  - direct_instruction
+  - fake_usage_note
+  - fake_precondition
+  - cross_tool_redirection
+
+tasks: {} # unused for the "mcp" suite (see mcp_tasks below); required key, kept empty
+
+mcp_tasks:
+  - mcp_file_storage_0
+  - mcp_ticketing_0
+  - mcp_crm_0
+  - mcp_calendar_0
+  - mcp_payments_0
+  - mcp_code_search_0
+  - mcp_analytics_0
+  - mcp_email_0
+  - mcp_messaging_0
+  - mcp_project_management_0
+  - mcp_hr_directory_0
+  - mcp_cloud_infra_0
+  - mcp_document_signing_0
+  - mcp_expense_reporting_0
+  - mcp_knowledge_base_0
+
+mcp_poisoned_cases:
+  direct_instruction: poison_direct_instruction_file_storage_list_files
+  fake_usage_note: poison_fake_usage_note_email_get_email
+  fake_precondition: poison_fake_precondition_payments_get_transaction
+  cross_tool_redirection: poison_cross_tool_redirection_crm_search_contacts
+
+output:
+  trace_db: runs/local/mcp_sweep/trace.db

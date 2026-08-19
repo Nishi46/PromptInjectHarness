@@ -5,9 +5,11 @@ import pytest
 
 from injection_pareto.scoring import (
     InjectionFreeViolation,
+    UtilityRate,
     UtilityRow,
     assert_injection_free,
     benign_utility_rate,
+    utility_tax_table,
 )
 from injection_pareto.trace import insert_episode, insert_run, open_db
 
@@ -130,3 +132,66 @@ def test_run_id_scopes_the_computation(tmp_path: Path) -> None:
     assert len(rates) == 1
     assert rates[0].n_episodes == 1
     assert rates[0].rate == 1.0
+
+
+def test_utility_tax_table_computes_a_positive_tax_when_target_does_worse(
+    tmp_path: Path,
+) -> None:
+    """S5-02's headline scenario: `dual_llm` completes fewer benign tasks
+    than `no_defense` on the same model -- a real utility tax, reported as
+    a positive number (`baseline_rate - target_rate`)."""
+    with open_db(_db_path(tmp_path)) as conn:
+        baseline_run = _make_run(conn, model="llama3.2:3b", defense="no_defense")
+        target_run = _make_run(conn, model="llama3.2:3b", defense="dual_llm")
+        insert_episode(conn, run_id=baseline_run, task_id="t0", started_at="t0", utility=True)
+        insert_episode(conn, run_id=baseline_run, task_id="t1", started_at="t0", utility=True)
+        insert_episode(conn, run_id=target_run, task_id="t0", started_at="t0", utility=True)
+        insert_episode(conn, run_id=target_run, task_id="t1", started_at="t0", utility=False)
+
+        rates = benign_utility_rate(conn)
+
+    rows = utility_tax_table(rates, baseline="no_defense", target="dual_llm")
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.model == "llama3.2:3b"
+    assert row.baseline_rate == 1.0
+    assert row.baseline_n == 2
+    assert row.target_rate == 0.5
+    assert row.target_n == 2
+    assert row.tax == pytest.approx(0.5)
+
+
+def test_utility_tax_table_reports_a_negative_tax_when_target_does_better() -> None:
+    """The honest opposite case (S5-02's own inspected result on the real
+    sweep, in fact): `dual_llm` completing *more* tasks than `no_defense`
+    must not be clamped to 0 -- report the negative number plainly."""
+    rates = [
+        UtilityRate(defense="no_defense", model="m", n_episodes=2, n_success=1, rate=0.5),
+        UtilityRate(defense="dual_llm", model="m", n_episodes=2, n_success=2, rate=1.0),
+    ]
+
+    rows = utility_tax_table(rates, baseline="no_defense", target="dual_llm")
+
+    assert rows[0].tax == pytest.approx(-0.5)
+
+
+def test_utility_tax_table_leaves_tax_none_when_a_model_is_missing_one_side() -> None:
+    """A model that only ever ran under `no_defense` (never `dual_llm`, or
+    vice versa) has nothing to subtract -- `tax` must be `None`, not a
+    fabricated 0.0 that would misreport "no tax" for a comparison that was
+    never actually measured."""
+    rates = [
+        UtilityRate(
+            defense="no_defense", model="only_baseline", n_episodes=3, n_success=3, rate=1.0
+        ),
+        UtilityRate(defense="dual_llm", model="only_target", n_episodes=3, n_success=3, rate=1.0),
+    ]
+
+    tax_rows = utility_tax_table(rates, baseline="no_defense", target="dual_llm")
+    rows = {row.model: row for row in tax_rows}
+
+    assert rows["only_baseline"].target_rate is None
+    assert rows["only_baseline"].tax is None
+    assert rows["only_target"].baseline_rate is None
+    assert rows["only_target"].tax is None

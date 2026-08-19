@@ -1,0 +1,54 @@
+# S5-02/S5-05's D7 (and later D8) architectural-defense sweep on the
+# AgentDojo `workspace` suite. Same models/tasks/attacks as
+# `configs/static_sweep.yaml` (S2-11) -- only `defenses` differs -- and
+# **deliberately writes into that same `output.trace_db` path**: the
+# `no_defense` rows `static_sweep.yaml` already populated become this
+# sweep's comparison baseline for free, rather than re-running a duplicate
+# benign pass just to get a `no_defense` column to compare against.
+#
+# S5-02 only runs this config's benign (`attack: null`) points -- the
+# utility-tax measurement. The attacked points (all 5 families) are
+# deliberately deferred to S5-05: D7 makes one extra quarantine-model call
+# per tool result, so its wall-clock cost is sampled first (S4-05's own
+# "measure before committing to the full grid" precedent) rather than run
+# blind here. `defenses` gains `capability_enforcement` once S5-03/S5-04
+# land it -- at that point this same file (not a new one) is what S5-05
+# runs for the attacked passes.
+
+name: architectural_static_sweep
+
+models:
+  - id: L1
+    provider: ollama
+    model: llama3.2:3b
+    digest: sha256:a80c4f17acd5
+  - id: L2
+    provider: ollama
+    model: llama3.1:latest
+    digest: sha256:46e0c10c039e
+
+defenses:
+  - dual_llm
+
+suites:
+  - workspace
+
+attacks:
+  - null # benign pass -- S5-02's utility-tax measurement, run now
+  - naive
+  - ignore_previous
+  - important_instructions
+  - context_completion
+  - encoding_obfuscation
+
+tasks:
+  workspace:
+    - user_task_0
+    - user_task_1
+    - user_task_3
+
+injection_tasks:
+  workspace: injection_task_0
+
+output:
+  trace_db: runs/local/static_sweep/trace.db
