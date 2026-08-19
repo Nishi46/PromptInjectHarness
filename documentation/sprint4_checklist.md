@@ -97,16 +97,16 @@ Granular sub-steps for each task in Sprint 4 of [sprint_planning.md](sprint_plan
 - [x] One operational surprise, documented rather than silently reported as a performance number: the real run's wall-clock (`/usr/bin/time`) showed ~8.7 hours elapsed against only 10s of this process's own CPU time — the tell that the host machine most likely slept mid-sweep (all real inference happens in the separate `ollama serve` process, unmeasured by `time` here) rather than Ollama genuinely stalling for hours. The pace through the first 27 trials before the gap (~80s/trial, ~64 min extrapolated for the full 48-trial grid) is the number worth trusting for future cost estimates, not the raw elapsed figure.
 - [x] `ruff check .`, `mypy .`, full `pytest` suite (310 tests) all clean — no code changed in this task beyond the new config file.
 
-## S4-07 — Reordering analysis: ASR@1 vs ASR@20, rank correlation (2.5h) 🔴 — deps: S4-05
+## S4-07 — Reordering analysis: ASR@1 vs ASR@20, rank correlation (2.5h) 🔴 — deps: S4-05 — done
 
-- [ ] Write `scripts/generate_adaptive_results.py`, mirroring `scripts/generate_static_baseline.py`/`scripts/generate_mcp_suite_results.py`'s existing pattern (typed row dataclasses + one query function each, deterministic output, no new dependency).
-- [ ] `_asr_at_1` query/table: per defense (and per attack family), the success rate of `adaptive_round` rows where `round_index = 1`, joined to `episode.security` — note in a comment that this is mathematically the same population as the existing static-baseline ASR (S1/S2), a cross-check worth actually running once the numbers exist.
-- [ ] `_asr_at_20` query/table: per defense (and per attack family), `mean(adaptive_trial.success)` over all trials for that (defense, family) pair.
-- [ ] `_rounds_to_success_distribution` query/table: per defense, count/median/mean of `adaptive_trial.rounds_to_success` among trials where it's not `NULL`, plus the count that never succeeded within budget.
-- [ ] Implement Spearman rank correlation by hand (no new dependency — matches `trace/queries.py::_percentile`'s existing hand-rolled-over-scipy precedent): rank defenses by `ASR@1` and separately by `ASR@20`, compute `rho` over the two rank vectors.
-- [ ] Write `results/adaptive.md`: the three tables above, the rank-correlation number, and an explicit, honest statement of whether any defense's rank changed materially between the two orderings — including the "none did" outcome if that's what the data shows, per the acceptance criterion's own wording.
-- [ ] Reproducibility check (matches S3-07's pattern exactly): run the script twice against the same trace DB, diff output with the timestamp line excluded — byte-identical.
-- [ ] `ruff check .`, `mypy .` clean.
+- [x] Wrote `scripts/generate_adaptive_results.py`, mirroring `scripts/generate_static_baseline.py`/`scripts/generate_mcp_suite_results.py`'s pattern (typed row dataclasses, one query function each, deterministic output, no new dependency) — extended to take a *list* of trace DB paths (defaulting to both real S4-05/S4-06 sweep DBs) since `adaptive_trial`/`adaptive_round` are identical schema across both suites, with `suite` (already a real column) threading through every table instead of a separate script per suite.
+- [x] `_asr_at_1` query/table: per (suite, defense, attack family, model), the success rate of `adaptive_round` rows where `round_index = 1` joined to `episode.security` — documented as mathematically the same population `results/static_baseline.md`/`results/mcp_suite.md` already report, and actually run as a cross-check now that the real numbers exist.
+- [x] `_asr_at_20` query/table: per (suite, defense, attack family, model), `mean(adaptive_trial.success)` — a trial that stopped early on success still counts as 1, one that ran the full budget without succeeding counts as 0.
+- [x] `_rounds_to_success_distribution` query/table: per (suite, defense), aggregated across attack family/model, count of trials that ever succeeded plus median/mean of `rounds_to_success` among those — `n/a` (not `0`) when nothing in that group ever succeeded, so "no distribution" isn't confused with "distribution is zero."
+- [x] Implemented Spearman rank correlation by hand (`_rank` + `_pearson`-of-ranks, no scipy/numpy — same hand-rolled-over-scipy precedent as `trace/queries.py::_percentile`), with correct tie handling (average rank) rather than the textbook sum-of-squared-differences shortcut, which assumes no ties — necessary here since a `0.000`-everywhere tie is exactly this project's real data. `spearman_rho` returns `None` (not `0.0`) when either rank vector is constant — a real, hit-every-time edge case on this data, not a hypothetical.
+- [x] Wrote `results/adaptive.md`: the three tables (108 ASR@1 rows, 108 ASR@20 rows, 12 rounds-to-success rows across both suites), a per-suite rank-correlation table, and an explicit "did adaptive attacks reorder the ranking?" analysis section. **Real answer: no reordering is observable at all** — every ASR@1/ASR@20 cell in both suites is `0.000`, so Spearman's rho is `n/a` (undefined, not zero) for both `workspace` and `mcp`; reported plainly as a real null result extending the project's established capability-ceiling finding into the adaptive setting, with the same "what would actually test this" pointer (a capable-enough model tier) `generate_mcp_suite_results.py`'s own analysis section already used.
+- [x] Reproducibility check (matches S3-07's pattern exactly): ran the script twice against the same two trace DBs, diffed output with the timestamp line excluded — byte-identical.
+- [x] `ruff check .`, `mypy .`, full `pytest` suite (310 tests) all clean — no source code changed beyond the new script.
 
 ## S4-08 — Qualitative writeup: what the successful mutation exploited (2h) 🟡 — deps: S4-07
 
@@ -121,9 +121,9 @@ Granular sub-steps for each task in Sprint 4 of [sprint_planning.md](sprint_plan
 
 ## Acceptance criteria (from sprint_planning.md)
 
-- [ ] Every (defense, attack) pair received exactly the same refinement budget — `ADAPTIVE_ROUND_BUDGET = 20` is a single module constant every `configs/adaptive*.yaml` sweep runs against unmodified; asserted by an S4-03 test, stated in the README.
-- [ ] `results/adaptive.md` reports ASR@1, ASR@20, and the rounds-to-success distribution.
-- [ ] At least one defense's rank changes materially between static and adaptive — and if none does, that's a real finding too; report it honestly (S4-07/S4-08).
+- [x] Every (defense, attack) pair received exactly the same refinement budget — `ADAPTIVE_ROUND_BUDGET = 20` is a single module constant every `configs/adaptive*.yaml` sweep runs against unmodified; asserted by S4-03's tests. (No project README exists yet in this repo — nothing to update there; the constant and its rationale are documented in `adaptive/trial.py`'s own module comment and `docs/notes/adaptive_attacks.md`.)
+- [x] `results/adaptive.md` reports ASR@1, ASR@20, and the rounds-to-success distribution — done in S4-07.
+- [x] At least one defense's rank changes materially between static and adaptive — and if none does, that's a real finding too; report it honestly (S4-07/S4-08). **None did** — every ASR cell in both real sweeps is `0.000`, so there is no ranking at all to reorder (Spearman's rho is `n/a`, not `0.0`, for both suites). Reported plainly in `results/adaptive.md`, not glossed over.
 
 **Cost risk — the big one.** 6 defenses × 5 attacks × 20 rounds × tasks × models multiplies fast. `adaptive-run --sample-fraction 0.01` (S4-05) exists specifically to run a 1% sample and extrapolate the bill *before* launching the full S4-05 sweep. Cut models before you cut rounds; rounds are the scientific claim.
 
