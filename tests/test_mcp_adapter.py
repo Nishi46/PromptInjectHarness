@@ -117,7 +117,7 @@ def test_run_mcp_episode_full_compromise_writes_complete_trace(tmp_path: Path) -
         user_task_id=TASK_ID,
         poisoned_case_id=CASE_ID,
         model_client=client,
-        defense_stack=DefenseStack([NoDefense()]),
+        defense_stack=DefenseStack([("no_defense", NoDefense())]),
         defense_name="no_defense",
         model_name="fake",
     )
@@ -180,7 +180,7 @@ def test_injection_text_override_replaces_the_cases_own_payload(tmp_path: Path) 
         user_task_id=TASK_ID,
         poisoned_case_id=CASE_ID,
         model_client=client,
-        defense_stack=DefenseStack([NoDefense()]),
+        defense_stack=DefenseStack([("no_defense", NoDefense())]),
         defense_name="no_defense",
         model_name="fake",
         injection_text_override=override_text,
@@ -205,7 +205,7 @@ def test_omitting_injection_text_override_uses_the_cases_own_payload(tmp_path: P
         user_task_id=TASK_ID,
         poisoned_case_id=CASE_ID,
         model_client=client,
-        defense_stack=DefenseStack([NoDefense()]),
+        defense_stack=DefenseStack([("no_defense", NoDefense())]),
         defense_name="no_defense",
         model_name="fake",
     )
@@ -236,7 +236,7 @@ def test_run_mcp_episode_benign_only_scores_security_none(tmp_path: Path) -> Non
         user_task_id=TASK_ID,
         poisoned_case_id=None,
         model_client=client,
-        defense_stack=DefenseStack([NoDefense()]),
+        defense_stack=DefenseStack([("no_defense", NoDefense())]),
         defense_name="no_defense",
         model_name="fake",
     )
@@ -273,7 +273,7 @@ def test_run_mcp_episode_blocked_compromise_scores_partial_not_full(tmp_path: Pa
     # Blocks *every* delete_file call -- including the benign one, so this
     # also proves utility is scored off the executed trace, not the
     # attempted one (a blocked benign action must not count as done).
-    defense_stack = DefenseStack([_BlockToolDefense("delete_file")])
+    defense_stack = DefenseStack([("block_delete_file", _BlockToolDefense("delete_file"))])
 
     result = run_mcp_episode(
         conn=conn,
@@ -344,7 +344,7 @@ def test_run_mcp_episode_separates_defense_cost_from_agent_cost(tmp_path: Path) 
         user_task_id=TASK_ID,
         poisoned_case_id=None,
         model_client=client,
-        defense_stack=DefenseStack([_CostlyDefense()]),
+        defense_stack=DefenseStack([("costly", _CostlyDefense())]),
         defense_name="costly",
         model_name="fake",
     )
@@ -357,6 +357,58 @@ def test_run_mcp_episode_separates_defense_cost_from_agent_cost(tmp_path: Path) 
     ]
     assert cost_models.count("fake") == 3
     assert cost_models.count("defense:costly") == 1
+
+
+def test_composed_stack_attributes_defense_events_and_cost_per_member(tmp_path: Path) -> None:
+    """S6-01: a two-member stack must produce one `defense_event` row per
+    member per hook (not one aggregate row for the whole stack), and one
+    separately-labeled `cost_record` row per member that made its own
+    model calls -- the "cost attributed per layer" acceptance criterion."""
+    conn, run_id = _new_db(tmp_path)
+    responses = [
+        _response("", [_tool_call("read_file", {"path": "notes.txt"})]),
+        _response("", [_tool_call("delete_file", {"path": "notes.txt"})]),
+        _response("Done."),
+    ]
+    client = _ScriptedClient(responses)
+    guard_a = _CostlyDefense()
+    guard_b = _CostlyDefense()
+    stack = DefenseStack([("guard_a", guard_a), ("guard_b", guard_b)])
+
+    result = run_mcp_episode(
+        conn=conn,
+        run_id=run_id,
+        user_task_id=TASK_ID,
+        poisoned_case_id=None,
+        model_client=client,
+        defense_stack=stack,
+        defense_name="guard_a+guard_b",
+        model_name="fake",
+    )
+
+    defense_event_names = [
+        r["defense_name"]
+        for r in conn.execute(
+            "SELECT defense_name FROM defense_event WHERE episode_id = ? ORDER BY id",
+            (result.episode_id,),
+        ).fetchall()
+    ]
+    # Every on_pre_tool_call/on_tool_result hook fires for both members, in
+    # order, for each of the two real (non-blocked) tool calls -- 4 events
+    # per tool call x 2 tool calls = 8, plus 2 on_pre_generate events per
+    # turn (2 members x however many turns actually generate) which we
+    # don't need the exact count of here, just that both names appear.
+    assert set(defense_event_names) == {"guard_a", "guard_b"}
+    assert defense_event_names.count("guard_a") == defense_event_names.count("guard_b")
+
+    cost_models = [
+        r["model"]
+        for r in conn.execute(
+            "SELECT model FROM cost_record WHERE episode_id = ?", (result.episode_id,)
+        ).fetchall()
+    ]
+    assert cost_models.count("defense:guard_a") == 1
+    assert cost_models.count("defense:guard_b") == 1
 
 
 # ---------------------------------------------------------------------------
@@ -379,7 +431,7 @@ def test_tool_call_result_json_round_trips_the_real_result(tmp_path: Path) -> No
         user_task_id=TASK_ID,
         poisoned_case_id=None,
         model_client=client,
-        defense_stack=DefenseStack([NoDefense()]),
+        defense_stack=DefenseStack([("no_defense", NoDefense())]),
         defense_name="no_defense",
         model_name="fake",
     )
@@ -405,7 +457,7 @@ def test_run_mcp_episode_raises_for_an_unknown_task_id(tmp_path: Path) -> None:
             user_task_id="does_not_exist",
             poisoned_case_id=None,
             model_client=client,
-            defense_stack=DefenseStack([NoDefense()]),
+            defense_stack=DefenseStack([("no_defense", NoDefense())]),
             defense_name="no_defense",
             model_name="fake",
         )
@@ -478,7 +530,7 @@ def test_run_mcp_episode_recovers_a_text_only_pseudo_tool_call(tmp_path: Path) -
         user_task_id=TASK_ID,
         poisoned_case_id=None,
         model_client=client,
-        defense_stack=DefenseStack([NoDefense()]),
+        defense_stack=DefenseStack([("no_defense", NoDefense())]),
         defense_name="no_defense",
         model_name="fake",
     )
@@ -510,7 +562,7 @@ def test_run_mcp_episode_defaults_to_temperature_zero(tmp_path: Path) -> None:
         user_task_id=TASK_ID,
         poisoned_case_id=None,
         model_client=client,
-        defense_stack=DefenseStack([NoDefense()]),
+        defense_stack=DefenseStack([("no_defense", NoDefense())]),
         defense_name="no_defense",
         model_name="fake",
     )
@@ -528,7 +580,7 @@ def test_run_mcp_episode_honors_an_explicit_params_override(tmp_path: Path) -> N
         user_task_id=TASK_ID,
         poisoned_case_id=None,
         model_client=client,
-        defense_stack=DefenseStack([NoDefense()]),
+        defense_stack=DefenseStack([("no_defense", NoDefense())]),
         defense_name="no_defense",
         model_name="fake",
         params={"temperature": 0.7, "seed": 42},

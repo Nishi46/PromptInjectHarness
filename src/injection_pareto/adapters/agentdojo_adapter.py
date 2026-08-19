@@ -95,6 +95,11 @@ def _response_to_assistant_message(response: ModelResponse) -> ChatMessage:
 
 @dataclass
 class _DefenseEventRecord:
+    # The specific stack member that produced this event (S6-01) -- never
+    # the outer, possibly-composite run label. A single-defense stack's
+    # `defense_name` here is always that one defense's own name, so this
+    # is a superset of the pre-S6-01 behavior, not a divergence from it.
+    defense_name: str
     hook: str
     verdict: str
     reason: str | None
@@ -185,14 +190,19 @@ class _PreGenerateElement(BasePipelineElement):
 
         our_messages = _agentdojo_messages_to_ours(messages)
         result = self._defense_stack.on_pre_generate(self._context, our_messages)
-        self._recorder.pre_generate_events.append(
-            _DefenseEventRecord(
-                hook="on_pre_generate",
-                verdict=result.verdict.value,
-                reason=result.reason,
-                timestamp=_now(),
+        event_timestamp = _now()
+        for member_name, member_result in self._defense_stack.last_member_results[
+            "on_pre_generate"
+        ]:
+            self._recorder.pre_generate_events.append(
+                _DefenseEventRecord(
+                    defense_name=member_name,
+                    hook="on_pre_generate",
+                    verdict=member_result.verdict.value,
+                    reason=member_result.reason,
+                    timestamp=event_timestamp,
+                )
             )
-        )
 
         if result.value is our_messages:
             return query, runtime, env, messages, extra_args
@@ -229,13 +239,18 @@ def _make_defended_runtime_class(
         ) -> tuple[object, str | None]:
             tool_call = ToolCall(id=str(uuid.uuid4()), name=function, arguments=dict(kwargs))  # type: ignore[call-overload]
             pre_result = defense_stack.on_pre_tool_call(context, tool_call)
+            pre_timestamp = _now()
             events = [
                 _DefenseEventRecord(
+                    defense_name=member_name,
                     hook="on_pre_tool_call",
-                    verdict=pre_result.verdict.value,
-                    reason=pre_result.reason,
-                    timestamp=_now(),
+                    verdict=member_result.verdict.value,
+                    reason=member_result.reason,
+                    timestamp=pre_timestamp,
                 )
+                for member_name, member_result in defense_stack.last_member_results[
+                    "on_pre_tool_call"
+                ]
             ]
 
             if pre_result.verdict is Verdict.BLOCK:
@@ -254,13 +269,18 @@ def _make_defended_runtime_class(
                 tool_call_id=tool_call.id, content=content, is_error=error is not None
             )
             post_result = defense_stack.on_tool_result(context, tool_result)
-            events.append(
+            post_timestamp = _now()
+            events.extend(
                 _DefenseEventRecord(
+                    defense_name=member_name,
                     hook="on_tool_result",
-                    verdict=post_result.verdict.value,
-                    reason=post_result.reason,
-                    timestamp=_now(),
+                    verdict=member_result.verdict.value,
+                    reason=member_result.reason,
+                    timestamp=post_timestamp,
                 )
+                for member_name, member_result in defense_stack.last_member_results[
+                    "on_tool_result"
+                ]
             )
             recorder.tool_call_events.append(events)
 
@@ -398,7 +418,6 @@ def run_episode(
         episode_id=episode_id,
         messages=messages,
         recorder=recorder,
-        defense_name=defense_name,
         model_name=model_name,
         valid_function_names=valid_function_names,
         defense_stack=defense_stack,
@@ -420,7 +439,6 @@ def _write_episode_trace(
     episode_id: int,
     messages: Sequence[ChatMessage],
     recorder: _EpisodeRecorder,
-    defense_name: str,
     model_name: str,
     valid_function_names: set[str],
     defense_stack: DefenseStack | None = None,
@@ -443,12 +461,18 @@ def _write_episode_trace(
     `defense_stack` is optional (defaults to `None`, skipping the block
     below) purely so existing low-level tests can call this function without
     constructing a live stack — every real call site (`run_episode`) passes
-    one. A defense that makes its own model calls (e.g. S2-05's `GuardModel`)
+    one. There is no separate `defense_name` parameter (S6-01) -- every
+    `_DefenseEventRecord` already carries the specific stack member's own
+    name (`recorder.pre_generate_events`/`tool_call_events`, populated from
+    `DefenseStack.last_member_results`), and the `cost_record` loop below
+    reads `defense_stack.named_defenses` directly for the same reason. A
+    defense that makes its own model calls (e.g. S2-05's `GuardModel`)
     exposes them via a `responses: list[ModelResponse]` attribute; any
     defense with that attribute gets its calls written to `cost_record`
-    labeled `defense:<defense_name>`, separable from the agent's own
-    `model_name`-labeled rows (S2-05's "overhead is separable from base
-    agent cost" acceptance criterion).
+    labeled `defense:<that member's own name>`, separable from the agent's
+    own `model_name`-labeled rows (S2-05's "overhead is separable from base
+    agent cost" acceptance criterion) and now from every other member's own
+    overhead too.
     """
     step_count = 0
     tool_call_count = 0
@@ -491,9 +515,17 @@ def _write_episode_trace(
                     events = recorder.tool_call_events[tool_call_cursor] if reached_runtime else []
                     if reached_runtime:
                         tool_call_cursor += 1
-                    blocked = any(
-                        e.hook == "on_pre_tool_call" and e.verdict == Verdict.BLOCK.value
-                        for e in events
+                    # The specific member that blocked (S6-01) -- `None` if
+                    # no member did. Stack execution stops at the first
+                    # `BLOCK`, so at most one `on_pre_tool_call` event here
+                    # can have `verdict == BLOCK`.
+                    blocking_defense_name = next(
+                        (
+                            e.defense_name
+                            for e in events
+                            if e.hook == "on_pre_tool_call" and e.verdict == Verdict.BLOCK.value
+                        ),
+                        None,
                     )
                     result_content = (
                         get_text_content_as_str(result_message.get("content") or [])
@@ -508,7 +540,7 @@ def _write_episode_trace(
                         tool_name=tc.function,
                         arguments_json=json.dumps(tc.args),
                         result_json=result_json,
-                        blocked_by_defense=defense_name if blocked else None,
+                        blocked_by_defense=blocking_defense_name,
                         timestamp=_now(),
                     )
                     tool_call_count += 1
@@ -522,7 +554,7 @@ def _write_episode_trace(
                             conn,
                             episode_id=episode_id,
                             step_id=step_id,
-                            defense_name=defense_name,
+                            defense_name=event.defense_name,
                             hook=event.hook,
                             verdict=event.verdict,
                             detail_json=json.dumps(detail) if detail else None,
@@ -538,7 +570,7 @@ def _write_episode_trace(
                 conn,
                 episode_id=episode_id,
                 step_id=None,
-                defense_name=defense_name,
+                defense_name=pg_event.defense_name,
                 hook=pg_event.hook,
                 verdict=pg_event.verdict,
                 detail_json=json.dumps({"reason": pg_event.reason}) if pg_event.reason else None,
@@ -559,13 +591,15 @@ def _write_episode_trace(
                 timestamp=_now(),
             )
 
-        for defense in defense_stack.defenses if defense_stack is not None else []:
+        for member_name, defense in (
+            defense_stack.named_defenses if defense_stack is not None else []
+        ):
             for response in getattr(defense, "responses", []):
                 insert_cost_record(
                     conn,
                     run_id=run_id,
                     episode_id=episode_id,
-                    model=f"defense:{defense_name}",
+                    model=f"defense:{member_name}",
                     tokens_in=response.tokens_in,
                     tokens_out=response.tokens_out,
                     wall_ms=response.wall_ms,

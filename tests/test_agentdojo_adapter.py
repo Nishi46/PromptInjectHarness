@@ -104,7 +104,7 @@ def _recorder() -> _EpisodeRecorder:
 
 
 def test_defended_runtime_allows_and_records_both_hooks() -> None:
-    stack = DefenseStack([_AllowDefense()])
+    stack = DefenseStack([("allow", _AllowDefense())])
     recorder = _recorder()
     runtime_class = _make_defended_runtime_class(stack, _context(), recorder)
     runtime = runtime_class([make_function(greet)])
@@ -119,7 +119,7 @@ def test_defended_runtime_allows_and_records_both_hooks() -> None:
 
 
 def test_defended_runtime_blocks_without_calling_the_real_function() -> None:
-    stack = DefenseStack([_BlockDefense()])
+    stack = DefenseStack([("block", _BlockDefense())])
     recorder = _recorder()
     runtime_class = _make_defended_runtime_class(stack, _context(), recorder)
     runtime = runtime_class([make_function(greet)])
@@ -134,7 +134,7 @@ def test_defended_runtime_blocks_without_calling_the_real_function() -> None:
 
 
 def test_defended_runtime_applies_tool_result_mutation() -> None:
-    stack = DefenseStack([_RedactResultDefense()])
+    stack = DefenseStack([("redact", _RedactResultDefense())])
     recorder = _recorder()
     runtime_class = _make_defended_runtime_class(stack, _context(), recorder)
     runtime = runtime_class([make_function(greet)])
@@ -204,7 +204,7 @@ def test_response_to_assistant_message_carries_tool_calls() -> None:
 
 def test_pre_generate_element_no_mutation_is_a_no_op() -> None:
     messages = [{"role": "system", "content": [{"type": "text", "content": "be helpful"}]}]
-    stack = DefenseStack([_AllowDefense()])
+    stack = DefenseStack([("allow", _AllowDefense())])
     element = _PreGenerateElement(stack, _context(), _recorder())
 
     _, _, _, result_messages, _ = element.query("hi", FunctionsRuntime([]), messages=messages)
@@ -214,7 +214,7 @@ def test_pre_generate_element_no_mutation_is_a_no_op() -> None:
 
 def test_pre_generate_element_applies_content_mutation() -> None:
     messages = [{"role": "system", "content": [{"type": "text", "content": "be helpful"}]}]
-    stack = DefenseStack([_UppercaseSystemPromptDefense()])
+    stack = DefenseStack([("uppercase", _UppercaseSystemPromptDefense())])
     element = _PreGenerateElement(stack, _context(), _recorder())
 
     _, _, _, result_messages, _ = element.query("hi", FunctionsRuntime([]), messages=messages)
@@ -229,13 +229,23 @@ def test_pre_generate_element_resets_recorder_on_fresh_attempt() -> None:
     it must clear out whatever a discarded earlier attempt left behind."""
     recorder = _recorder()
     stale_event = _DefenseEventRecord(
-        hook="on_pre_tool_call", verdict="allow", reason=None, timestamp="stale"
+        defense_name="allow",
+        hook="on_pre_tool_call",
+        verdict="allow",
+        reason=None,
+        timestamp="stale",
     )
     recorder.tool_call_events.append([stale_event])
     recorder.pre_generate_events.append(
-        _DefenseEventRecord(hook="on_pre_generate", verdict="allow", reason=None, timestamp="stale")
+        _DefenseEventRecord(
+            defense_name="allow",
+            hook="on_pre_generate",
+            verdict="allow",
+            reason=None,
+            timestamp="stale",
+        )
     )
-    element = _PreGenerateElement(DefenseStack([_AllowDefense()]), _context(), recorder)
+    element = _PreGenerateElement(DefenseStack([("allow", _AllowDefense())]), _context(), recorder)
 
     messages = [
         {"role": "system", "content": [{"type": "text", "content": "sys"}]},
@@ -323,7 +333,7 @@ def test_write_episode_trace_records_defense_model_calls_separately_from_agent(
         guard_defense = _FakeGuardDefense(
             [_FakeGuardResponse(usd=0.0005, tokens_in=10, tokens_out=2, wall_ms=5)]
         )
-        stack = DefenseStack([guard_defense])
+        stack = DefenseStack([("guard_model", guard_defense)])
 
         _write_episode_trace(
             conn,
@@ -331,7 +341,6 @@ def test_write_episode_trace_records_defense_model_calls_separately_from_agent(
             episode_id=episode_id,
             messages=messages,
             recorder=recorder,
-            defense_name="guard_model",
             model_name="llama3.2:3b",
             valid_function_names=set(),
             defense_stack=stack,
@@ -344,6 +353,81 @@ def test_write_episode_trace_records_defense_model_calls_separately_from_agent(
     assert rows["llama3.2:3b"]["usd"] == 0.01
     assert rows["defense:guard_model"]["usd"] == 0.0005
     assert rows["defense:guard_model"]["wall_ms"] == 5
+
+
+def test_composed_stack_attributes_defense_events_and_cost_per_member(tmp_path: Path) -> None:
+    """S6-01: a two-member stack must produce one `defense_event` row per
+    member per hook (not one aggregate row for the whole stack), and one
+    separately-labeled `cost_record` row per member that made its own
+    model calls -- the "cost attributed per layer" acceptance criterion,
+    exercised through the real recording path (`_make_defended_runtime_class`),
+    not just the cost-record loop in isolation."""
+    guard_a = _FakeGuardDefense(
+        [_FakeGuardResponse(usd=0.001, tokens_in=10, tokens_out=2, wall_ms=5)]
+    )
+    guard_b = _FakeGuardDefense(
+        [_FakeGuardResponse(usd=0.002, tokens_in=20, tokens_out=4, wall_ms=7)]
+    )
+    stack = DefenseStack([("guard_a", guard_a), ("guard_b", guard_b)])
+    recorder = _recorder()
+    runtime_class = _make_defended_runtime_class(stack, _context(), recorder)
+    runtime = runtime_class([make_function(greet)])
+
+    runtime.run_function(None, "greet", {"name": "world"})
+
+    assert len(recorder.tool_call_events) == 1
+    events = recorder.tool_call_events[0]
+    # 2 members x 2 hooks (on_pre_tool_call, on_tool_result) = 4 events,
+    # each carrying its own member's name.
+    assert [(e.defense_name, e.hook) for e in events] == [
+        ("guard_a", "on_pre_tool_call"),
+        ("guard_b", "on_pre_tool_call"),
+        ("guard_a", "on_tool_result"),
+        ("guard_b", "on_tool_result"),
+    ]
+
+    conn, run_id, episode_id = _open_test_db(tmp_path)
+    try:
+        _write_episode_trace(
+            conn,
+            run_id=run_id,
+            episode_id=episode_id,
+            messages=[
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [FunctionCall(id="1", function="greet", args={"name": "world"})],
+                },
+                {
+                    "role": "tool",
+                    "content": [{"type": "text", "content": "hello world"}],
+                    "tool_call_id": "1",
+                    "error": None,
+                },
+            ],
+            recorder=recorder,
+            model_name="llama3.2:3b",
+            valid_function_names={"greet"},
+            defense_stack=stack,
+        )
+
+        defense_event_names = [
+            r["defense_name"]
+            for r in conn.execute(
+                "SELECT defense_name FROM defense_event ORDER BY id"
+            ).fetchall()
+        ]
+        cost_rows = {
+            r["model"]: r for r in conn.execute("SELECT model, usd, wall_ms FROM cost_record")
+        }
+    finally:
+        conn.close()
+
+    assert defense_event_names == ["guard_a", "guard_b", "guard_a", "guard_b"]
+    assert cost_rows["defense:guard_a"]["usd"] == 0.001
+    assert cost_rows["defense:guard_a"]["wall_ms"] == 5
+    assert cost_rows["defense:guard_b"]["usd"] == 0.002
+    assert cost_rows["defense:guard_b"]["wall_ms"] == 7
 
 
 def test_write_episode_trace_handles_max_iters_cutoff_without_crashing(tmp_path: Path) -> None:
@@ -371,7 +455,6 @@ def test_write_episode_trace_handles_max_iters_cutoff_without_crashing(tmp_path:
             episode_id=episode_id,
             messages=messages,
             recorder=recorder,
-            defense_name="no_defense",
             model_name="llama3.2:3b",
             valid_function_names={"send_email"},
         )
@@ -424,10 +507,18 @@ def test_write_episode_trace_does_not_misalign_cursor_on_invalid_tool_name(tmp_p
         recorder.tool_call_events.append(
             [
                 _DefenseEventRecord(
-                    hook="on_pre_tool_call", verdict="allow", reason=None, timestamp="t0"
+                    defense_name="no_defense",
+                    hook="on_pre_tool_call",
+                    verdict="allow",
+                    reason=None,
+                    timestamp="t0",
                 ),
                 _DefenseEventRecord(
-                    hook="on_tool_result", verdict="block", reason="denied", timestamp="t0"
+                    defense_name="no_defense",
+                    hook="on_tool_result",
+                    verdict="block",
+                    reason="denied",
+                    timestamp="t0",
                 ),
             ]
         )
@@ -438,7 +529,6 @@ def test_write_episode_trace_does_not_misalign_cursor_on_invalid_tool_name(tmp_p
             episode_id=episode_id,
             messages=messages,
             recorder=recorder,
-            defense_name="no_defense",
             model_name="llama3.2:3b",
             valid_function_names={"send_email"},
         )
@@ -528,7 +618,7 @@ def _run_episode_capturing_injections(
             user_task_id=_USER_TASK_ID,
             injection_task_id=_INJECTION_TASK_ID,
             model_client=_UnusedModelClient(),
-            defense_stack=DefenseStack([_AllowDefense()]),
+            defense_stack=DefenseStack([("no_defense", _AllowDefense())]),
             defense_name="no_defense",
             model_name="llama3.2:3b",
             attack_name="naive",

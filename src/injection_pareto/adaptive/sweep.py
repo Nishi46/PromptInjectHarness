@@ -27,7 +27,7 @@ from injection_pareto.clients.base import ModelClient
 from injection_pareto.clients.factory import build_model_client
 from injection_pareto.config.loader import expand_run_specs
 from injection_pareto.config.schema import ExperimentConfig, ModelSpec
-from injection_pareto.defenses import resolve_defense
+from injection_pareto.defenses import resolve_defense_stack
 from injection_pareto.defenses.stack import DefenseStack
 from injection_pareto.mcp.poisoned import get_case
 from injection_pareto.trace.db import connect, insert_run, open_db
@@ -285,7 +285,7 @@ def _run_trial_point(
             # is `run_adaptive_trial`'s own responsibility -- it calls this
             # factory once per round, not once per trial.
             def defense_stack_factory() -> DefenseStack:
-                return DefenseStack([resolve_defense(point.defense)])
+                return resolve_defense_stack(point.defense)
 
             common_kwargs: dict[str, object] = dict(
                 conn=conn,

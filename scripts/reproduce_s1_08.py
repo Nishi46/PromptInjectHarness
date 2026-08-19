@@ -75,7 +75,7 @@ def run_our_harness(task_ids: list[str]) -> dict[str, float]:
     TRACE_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     cache = ResponseCache(cache_dir=".cache/responses")
     client = build_model_client(MODEL, cache=cache)
-    defense_stack = DefenseStack([resolve_defense("no_defense")])
+    defense_stack = DefenseStack([("no_defense", resolve_defense("no_defense"))])
 
     conn = connect(TRACE_DB_PATH)
     init_db(conn)

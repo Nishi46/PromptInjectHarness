@@ -1,4 +1,7 @@
-from injection_pareto.defenses import DefenseStack
+import pytest
+
+from injection_pareto.defenses import DefenseStack, resolve_defense_stack
+from injection_pareto.defenses.registry import resolve_defense
 from injection_pareto.types import (
     CostRecord,
     DefenseContext,
@@ -140,7 +143,12 @@ class FlaggingDefense:
 
 def test_hook_call_order_matches_stack_order() -> None:
     calls: list[str] = []
-    stack = DefenseStack([RecordingDefense("first", calls), RecordingDefense("second", calls)])
+    stack = DefenseStack(
+        [
+            ("first", RecordingDefense("first", calls)),
+            ("second", RecordingDefense("second", calls)),
+        ]
+    )
 
     stack.on_pre_generate(DefenseContext(), [Message(role="user", content="hi")])
 
@@ -150,9 +158,9 @@ def test_hook_call_order_matches_stack_order() -> None:
 def test_cost_sums_across_stack() -> None:
     stack = DefenseStack(
         [
-            FixedCostDefense(CostRecord(usd=1.5, tokens_in=10, tokens_out=5)),
-            FixedCostDefense(CostRecord(usd=2.5, tokens_in=20, tokens_out=8)),
-            FixedCostDefense(CostRecord(usd=3.0, tokens_in=30, tokens_out=12)),
+            ("a", FixedCostDefense(CostRecord(usd=1.5, tokens_in=10, tokens_out=5))),
+            ("b", FixedCostDefense(CostRecord(usd=2.5, tokens_in=20, tokens_out=8))),
+            ("c", FixedCostDefense(CostRecord(usd=3.0, tokens_in=30, tokens_out=12))),
         ]
     )
 
@@ -163,7 +171,7 @@ def test_cost_sums_across_stack() -> None:
 
 def test_block_short_circuits_later_defenses() -> None:
     later = FlaggingDefense()
-    stack = DefenseStack([BlockingToolCallDefense(), later])
+    stack = DefenseStack([("blocker", BlockingToolCallDefense()), ("later", later)])
 
     result = stack.on_pre_tool_call(
         DefenseContext(), ToolCall(id="1", name="send_email", arguments={})
@@ -178,9 +186,68 @@ def test_allow_verdict_reason_survives_the_stack() -> None:
     """Regression: an ALLOW-verdict reason must not be silently dropped just
     because nothing blocked (S2-05's `GuardModel` relies on this to log a
     score on every tool result, not just blocked ones)."""
-    stack = DefenseStack([AllowWithReasonDefense('{"score": 0.9}')])
+    stack = DefenseStack([("guard", AllowWithReasonDefense('{"score": 0.9}'))])
 
     result = stack.on_tool_result(DefenseContext(), ToolResult(tool_call_id="1", content="x"))
 
     assert result.verdict is Verdict.ALLOW
     assert result.reason == '{"score": 0.9}'
+
+
+# -- S6-01: per-member attribution --------------------------------------
+
+
+def test_last_member_results_records_every_member_in_call_order() -> None:
+    stack = DefenseStack(
+        [
+            ("first", AllowWithReasonDefense("first reason")),
+            ("second", AllowWithReasonDefense("second reason")),
+        ]
+    )
+
+    stack.on_tool_result(DefenseContext(), ToolResult(tool_call_id="1", content="x"))
+
+    results = stack.last_member_results["on_tool_result"]
+    assert [name for name, _ in results] == ["first", "second"]
+    assert results[0][1].reason == "first reason"
+    assert results[1][1].reason == "second reason"
+
+
+def test_last_member_results_omits_a_member_skipped_by_an_earlier_block() -> None:
+    later = FlaggingDefense()
+    stack = DefenseStack([("blocker", BlockingToolCallDefense()), ("later", later)])
+
+    stack.on_pre_tool_call(DefenseContext(), ToolCall(id="1", name="send_email", arguments={}))
+
+    results = stack.last_member_results["on_pre_tool_call"]
+    assert [name for name, _ in results] == ["blocker"]
+
+
+def test_last_member_results_is_populated_fresh_each_call_not_accumulated() -> None:
+    stack = DefenseStack([("a", AllowWithReasonDefense("r"))])
+
+    stack.on_tool_result(DefenseContext(), ToolResult(tool_call_id="1", content="x"))
+    stack.on_tool_result(DefenseContext(), ToolResult(tool_call_id="2", content="y"))
+
+    assert len(stack.last_member_results["on_tool_result"]) == 1
+
+
+# -- resolve_defense_stack ------------------------------------------------
+
+
+def test_resolve_defense_stack_single_name_matches_resolve_defense() -> None:
+    stack = resolve_defense_stack("no_defense")
+
+    assert [name for name, _ in stack.named_defenses] == ["no_defense"]
+    assert isinstance(stack.named_defenses[0][1], type(resolve_defense("no_defense")))
+
+
+def test_resolve_defense_stack_composite_name_resolves_every_member() -> None:
+    stack = resolve_defense_stack("spotlighting+guard_model")
+
+    assert [name for name, _ in stack.named_defenses] == ["spotlighting", "guard_model"]
+
+
+def test_resolve_defense_stack_unknown_segment_raises_naming_it() -> None:
+    with pytest.raises(ValueError, match="unknown"):
+        resolve_defense_stack("no_defense+unknown")

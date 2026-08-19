@@ -1,0 +1,27 @@
+# S6-01 smoke check -- proves a real composed defense (`spotlighting+guard_model`)
+# runs end to end through the real CLI/sweep machinery, not just unit tests
+# against fakes.
+
+name: smoke_composition
+
+models:
+  - id: L1
+    provider: ollama
+    model: llama3.2:3b
+    digest: sha256:a80c4f17acd5
+
+defenses:
+  - spotlighting+guard_model
+
+suites:
+  - workspace
+
+attacks:
+  - null # benign only
+
+tasks:
+  workspace:
+    - user_task_0
+
+output:
+  trace_db: runs/local/smoke_composition/trace.db

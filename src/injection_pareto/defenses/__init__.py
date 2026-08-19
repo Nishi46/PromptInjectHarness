@@ -5,7 +5,7 @@ from injection_pareto.defenses.dual_llm import DualLLM
 from injection_pareto.defenses.guard_model import GuardModel
 from injection_pareto.defenses.instructional_prevention import InstructionalPrevention
 from injection_pareto.defenses.no_defense import NoDefense
-from injection_pareto.defenses.registry import resolve_defense
+from injection_pareto.defenses.registry import resolve_defense, resolve_defense_stack
 from injection_pareto.defenses.spotlighting import Spotlighting
 from injection_pareto.defenses.stack import DefenseStack
 from injection_pareto.defenses.tool_allowlist import ToolAllowlist
@@ -22,4 +22,5 @@ __all__ = [
     "Spotlighting",
     "ToolAllowlist",
     "resolve_defense",
+    "resolve_defense_stack",
 ]

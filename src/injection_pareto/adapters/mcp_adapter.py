@@ -98,6 +98,11 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+#  (defense_name, verdict, reason) for one stack member's own `HookResult`
+# on one hook call -- S6-01's per-layer trace attribution.
+_MemberEvent = tuple[str, str, str | None]
+
+
 @dataclass
 class _RecordedToolCall:
     """Everything one tool call needs for both trace-writing and scoring.
@@ -106,16 +111,21 @@ class _RecordedToolCall:
     matching `agentdojo_adapter._write_episode_trace`'s convention, so
     scoring (and a human reading the trace) see what the agent actually
     asked for, with the defense's intervention recorded alongside it
-    rather than silently replacing it."""
+    rather than silently replacing it.
+
+    `pre_tool_call_events`/`on_tool_result_events` are each stack member's
+    own `HookResult` on that hook, not one aggregated verdict/reason for
+    the whole stack (S6-01) -- read from `DefenseStack.last_member_results`
+    right after each hook call. `on_tool_result_events` is empty when
+    `blocked` is true: `on_tool_result` never runs for a call an earlier
+    member already blocked."""
 
     tool_call: ToolCall
     result_content: str
     is_error: bool
     blocked: bool
-    pre_tool_call_verdict: str
-    pre_tool_call_reason: str | None
-    on_tool_result_verdict: str | None
-    on_tool_result_reason: str | None
+    pre_tool_call_events: list[_MemberEvent]
+    on_tool_result_events: list[_MemberEvent]
 
 
 @dataclass
@@ -164,7 +174,15 @@ def run_mcp_episode(
     mirrors `agentdojo_adapter.run_episode`'s `injections_override`, and is
     the hook the adaptive loop uses to replay a mutated payload. Ignored
     when `poisoned_case_id` is `None`; when omitted, behavior is unchanged
-    from before this parameter existed."""
+    from before this parameter existed.
+
+    `defense_name` is kept purely for call-site symmetry with `run_episode`
+    (whose own `defense_name` is still load-bearing there -- AgentDojo's
+    attack loader resolves model identity through `pipeline.name`, which
+    embeds it). `_write_mcp_episode_trace` no longer reads it directly
+    (S6-01): every `defense_event`/`cost_record` row now carries the
+    specific `DefenseStack` member's own name instead of this one
+    (possibly-composite) outer label."""
     task = get_task(user_task_id)
     servers = [load_named_server(name) for name in task.servers]
 
@@ -193,7 +211,7 @@ def run_mcp_episode(
         _RecordedStep(role="system", content=_SYSTEM_PROMPT),
         _RecordedStep(role="user", content=task.prompt),
     ]
-    pre_generate_events: list[tuple[str, str | None]] = []
+    pre_generate_events: list[_MemberEvent] = []
     model_responses: list[ModelResponse] = []
     # Two different traces, deliberately (found while wiring this adapter --
     # see `mcp/scoring.py::score_mcp_partial_compromise`'s docstring):
@@ -213,7 +231,12 @@ def run_mcp_episode(
     started_at = _now()
     for _turn in range(max_turns):
         pre_result = defense_stack.on_pre_generate(context, messages)
-        pre_generate_events.append((pre_result.verdict.value, pre_result.reason))
+        pre_generate_events.extend(
+            (member_name, member_result.verdict.value, member_result.reason)
+            for member_name, member_result in defense_stack.last_member_results[
+                "on_pre_generate"
+            ]
+        )
         messages = pre_result.value
 
         response = model_client.generate(
@@ -238,6 +261,12 @@ def run_mcp_episode(
         for tc in response.tool_calls:
             attempted_trace.append(tc)
             pre_tc_result = defense_stack.on_pre_tool_call(context, tc)
+            pre_tc_events: list[_MemberEvent] = [
+                (member_name, member_result.verdict.value, member_result.reason)
+                for member_name, member_result in defense_stack.last_member_results[
+                    "on_pre_tool_call"
+                ]
+            ]
 
             if pre_tc_result.verdict is Verdict.BLOCK:
                 content = f"Blocked by defense: {pre_tc_result.reason}"
@@ -248,10 +277,8 @@ def run_mcp_episode(
                         result_content=content,
                         is_error=True,
                         blocked=True,
-                        pre_tool_call_verdict=pre_tc_result.verdict.value,
-                        pre_tool_call_reason=pre_tc_result.reason,
-                        on_tool_result_verdict=None,
-                        on_tool_result_reason=None,
+                        pre_tool_call_events=pre_tc_events,
+                        on_tool_result_events=[],
                     )
                 )
                 continue
@@ -272,10 +299,13 @@ def run_mcp_episode(
                     result_content=final_result.content,
                     is_error=final_result.is_error,
                     blocked=False,
-                    pre_tool_call_verdict=pre_tc_result.verdict.value,
-                    pre_tool_call_reason=pre_tc_result.reason,
-                    on_tool_result_verdict=post_result.verdict.value,
-                    on_tool_result_reason=post_result.reason,
+                    pre_tool_call_events=pre_tc_events,
+                    on_tool_result_events=[
+                        (member_name, member_result.verdict.value, member_result.reason)
+                        for member_name, member_result in defense_stack.last_member_results[
+                            "on_tool_result"
+                        ]
+                    ],
                 )
             )
         steps.append(
@@ -316,7 +346,6 @@ def run_mcp_episode(
         pre_generate_events=pre_generate_events,
         model_responses=model_responses,
         model_name=model_name,
-        defense_name=defense_name,
         defense_stack=defense_stack,
     )
 
@@ -335,10 +364,9 @@ def _write_mcp_episode_trace(
     run_id: int,
     episode_id: int,
     steps: list[_RecordedStep],
-    pre_generate_events: list[tuple[str, str | None]],
+    pre_generate_events: list[_MemberEvent],
     model_responses: list[ModelResponse],
     model_name: str,
-    defense_name: str,
     defense_stack: DefenseStack,
 ) -> tuple[int, int]:
     """A from-scratch counterpart to `agentdojo_adapter._write_episode_trace`,
@@ -349,7 +377,12 @@ def _write_mcp_episode_trace(
     builds first-class `_RecordedStep`/`_RecordedToolCall` records as it
     drives its own loop, so there's nothing to reconstruct -- writing them
     out is a direct walk, batched into one `transaction()` for the same
-    commit-per-episode reason S1-03/S1-05 established."""
+    commit-per-episode reason S1-03/S1-05 established.
+
+    No separate `defense_name` parameter (S6-01): every recorded event
+    already carries the specific stack member's own name (`_MemberEvent`'s
+    first element), and the `cost_record` loop below reads
+    `defense_stack.named_defenses` directly for the same reason."""
     step_count = 0
     tool_call_count = 0
     with transaction(conn):
@@ -365,56 +398,61 @@ def _write_mcp_episode_trace(
             step_count += 1
 
             for recorded in step.tool_calls:
+                # The specific member that blocked (S6-01), `None` if none
+                # did -- stack execution stops at the first `BLOCK`, so at
+                # most one `on_pre_tool_call` event here has verdict "block".
+                blocking_defense_name = next(
+                    (name for name, verdict, _reason in recorded.pre_tool_call_events
+                     if verdict == Verdict.BLOCK.value),
+                    None,
+                )
                 tool_call_row_id = insert_tool_call(
                     conn,
                     step_id=step_id,
                     tool_name=recorded.tool_call.name,
                     arguments_json=json.dumps(recorded.tool_call.arguments),
                     result_json=json.dumps(recorded.result_content),
-                    blocked_by_defense=defense_name if recorded.blocked else None,
+                    blocked_by_defense=blocking_defense_name,
                     timestamp=_now(),
                 )
                 tool_call_count += 1
 
-                pre_detail = (
-                    {"reason": recorded.pre_tool_call_reason, "tool_call_id": tool_call_row_id}
-                    if recorded.pre_tool_call_reason
-                    else None
-                )
-                insert_defense_event(
-                    conn,
-                    episode_id=episode_id,
-                    step_id=step_id,
-                    defense_name=defense_name,
-                    hook="on_pre_tool_call",
-                    verdict=recorded.pre_tool_call_verdict,
-                    detail_json=json.dumps(pre_detail) if pre_detail else None,
-                    timestamp=_now(),
-                )
-
-                if recorded.on_tool_result_verdict is not None:
-                    post_detail = (
-                        {"reason": recorded.on_tool_result_reason, "tool_call_id": tool_call_row_id}
-                        if recorded.on_tool_result_reason
-                        else None
+                for member_name, verdict, reason in recorded.pre_tool_call_events:
+                    pre_detail = (
+                        {"reason": reason, "tool_call_id": tool_call_row_id} if reason else None
                     )
                     insert_defense_event(
                         conn,
                         episode_id=episode_id,
                         step_id=step_id,
-                        defense_name=defense_name,
+                        defense_name=member_name,
+                        hook="on_pre_tool_call",
+                        verdict=verdict,
+                        detail_json=json.dumps(pre_detail) if pre_detail else None,
+                        timestamp=_now(),
+                    )
+
+                for member_name, verdict, reason in recorded.on_tool_result_events:
+                    post_detail = (
+                        {"reason": reason, "tool_call_id": tool_call_row_id} if reason else None
+                    )
+                    insert_defense_event(
+                        conn,
+                        episode_id=episode_id,
+                        step_id=step_id,
+                        defense_name=member_name,
                         hook="on_tool_result",
-                        verdict=recorded.on_tool_result_verdict,
+                        verdict=verdict,
                         detail_json=json.dumps(post_detail) if post_detail else None,
                         timestamp=_now(),
                     )
 
-        for verdict, reason in pre_generate_events:
+        for member_name, verdict, reason in pre_generate_events:
             insert_defense_event(
                 conn,
                 episode_id=episode_id,
                 step_id=None,
-                defense_name=defense_name,
+                defense_name=member_name,
                 hook="on_pre_generate",
                 verdict=verdict,
                 detail_json=json.dumps({"reason": reason}) if reason else None,
@@ -435,13 +473,13 @@ def _write_mcp_episode_trace(
                 timestamp=_now(),
             )
 
-        for defense in defense_stack.defenses:
+        for member_name, defense in defense_stack.named_defenses:
             for response in getattr(defense, "responses", []):
                 insert_cost_record(
                     conn,
                     run_id=run_id,
                     episode_id=episode_id,
-                    model=f"defense:{defense_name}",
+                    model=f"defense:{member_name}",
                     tokens_in=response.tokens_in,
                     tokens_out=response.tokens_out,
                     wall_ms=response.wall_ms,

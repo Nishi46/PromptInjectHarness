@@ -19,8 +19,7 @@ from injection_pareto.clients.base import ModelClient
 from injection_pareto.clients.factory import build_model_client
 from injection_pareto.config.loader import expand_run_specs
 from injection_pareto.config.schema import ExperimentConfig, RunSpec
-from injection_pareto.defenses import resolve_defense
-from injection_pareto.defenses.stack import DefenseStack
+from injection_pareto.defenses import resolve_defense_stack
 from injection_pareto.trace.db import connect, insert_run, open_db
 
 # Local inference is GPU-serialized anyway (Appendix A.2), so more than one
@@ -155,7 +154,7 @@ def _run_point(
         conn = connect(trace_db_path)
         try:
             client = build_client_fn(point.spec.model, cache=cache, no_cache=no_cache)
-            defense_stack = DefenseStack([resolve_defense(point.spec.defense)])
+            defense_stack = resolve_defense_stack(point.spec.defense)
             if point.spec.suite == "mcp":
                 run_mcp_episode_fn(
                     conn=conn,

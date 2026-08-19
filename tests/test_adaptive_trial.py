@@ -108,7 +108,7 @@ def _fake_mutate_payload_fn() -> tuple[Any, list[int]]:
 
 
 def _defense_stack_factory() -> DefenseStack:
-    return DefenseStack([NoDefense()])
+    return DefenseStack([("no_defense", NoDefense())])
 
 
 def _fake_run_episode_fn_failing_on(
