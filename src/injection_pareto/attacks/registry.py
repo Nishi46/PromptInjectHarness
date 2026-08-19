@@ -35,6 +35,12 @@ _FAMILY_TO_AGENTDOJO_NAME: dict[str, str] = {
     "encoding_obfuscation": "encoding_obfuscation",
 }
 
+# Public, canonical list of this project's own attack-family names (S4-02's
+# mutation engine keys its per-family constraints off this rather than a
+# second hardcoded list, so a new family added here can't silently drift out
+# of sync with what the mutator knows how to constrain).
+ATTACK_FAMILIES: tuple[str, ...] = tuple(_FAMILY_TO_AGENTDOJO_NAME)
+
 
 def resolve_attack_name(name: str) -> str:
     """Map one of our project's canonical attack-family names to the name

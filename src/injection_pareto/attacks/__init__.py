@@ -1,3 +1,3 @@
-from injection_pareto.attacks.registry import resolve_attack_name
+from injection_pareto.attacks.registry import ATTACK_FAMILIES, resolve_attack_name
 
-__all__ = ["resolve_attack_name"]
+__all__ = ["ATTACK_FAMILIES", "resolve_attack_name"]
