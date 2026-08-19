@@ -1,5 +1,6 @@
 from injection_pareto.defenses.base import Defense
 from injection_pareto.defenses.canary import Canary
+from injection_pareto.defenses.dual_llm import DualLLM
 from injection_pareto.defenses.guard_model import GuardModel
 from injection_pareto.defenses.instructional_prevention import InstructionalPrevention
 from injection_pareto.defenses.no_defense import NoDefense
@@ -12,6 +13,7 @@ __all__ = [
     "Canary",
     "Defense",
     "DefenseStack",
+    "DualLLM",
     "GuardModel",
     "InstructionalPrevention",
     "NoDefense",

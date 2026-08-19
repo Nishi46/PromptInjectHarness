@@ -1,0 +1,27 @@
+# S5-01 integration check config -- proves DualLLM (dual_llm) end-to-end on
+# the smallest possible run: one model, dual_llm defense, one suite, benign
+# only (no attack). Mirrors configs/smoke.yaml exactly except the defense.
+
+name: smoke_dual_llm
+
+models:
+  - id: L1
+    provider: ollama
+    model: llama3.2:3b
+    digest: sha256:a80c4f17acd5
+
+defenses:
+  - dual_llm
+
+suites:
+  - workspace
+
+attacks:
+  - null # benign only
+
+tasks:
+  workspace:
+    - user_task_0
+
+output:
+  trace_db: runs/local/smoke_dual_llm/trace.db
