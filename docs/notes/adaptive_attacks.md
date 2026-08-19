@@ -165,3 +165,33 @@ knowing before work starts:
    the second step of their two-step data-stealing attacks (Table 4, §6.3). If Sprint 4's
    task suite includes multi-step attacker goals, expect a similar first-step bias unless
    the feedback/mutation design explicitly accounts for downstream steps.
+
+## Implementation decisions for this project's Sprint 4
+
+Every existing execution path runs exactly one static, pre-computed injection payload per
+episode: `agentdojo_adapter.run_episode` calls `attack.attack(user_task, injection_task)`
+once and hands the resulting `injections: dict[str, str]` straight to
+`suite.run_task_with_pipeline`; `mcp_adapter.run_mcp_episode` calls
+`PoisonedCase.apply(server)` once using the case's fixed `injection_text`. Sprint 4 needs
+to re-run the *same* (defense, task) pair up to 20 times with a *different* payload each
+round.
+
+Three of the five AgentDojo families (`naive`, `ignore_previous`, `important_instructions`)
+build their payload from a `FixedJailbreakAttack.jailbreak` template string — but
+`encoding_obfuscation` computes its payload in Python code
+(`base64.b64encode(injection_task.GOAL.encode())`, see
+`attacks/families/encoding_obfuscation.py`), with no template string to swap. That rules
+out "mutate the attack object's internal state" as a uniform hook across every family.
+
+**Decision: mutate the *output* of round 1's payload computation, not the attack machinery
+that produced it.** Round 1 of every trial uses whatever the family's own `attack.attack()`
+(AgentDojo) / `PoisonedCase.injection_text` (MCP) already produces — this is deliberately
+identical to the existing static ASR@1 baseline (S1/S2/S3), a property S4-07's
+ASR@1-vs-ASR@20 comparison relies on. Every round after the first is instead driven by a
+plain override string/dict plumbed into a new, additive parameter on each existing adapter
+entrypoint: `run_episode(..., injections_override: dict[str, str] | None = None)` and
+`run_mcp_episode(..., injection_text_override: str | None = None)`. Neither adapter's
+existing behavior changes when the override is omitted. This keeps the mutation engine
+(S4-02) suite- and family-agnostic — it only ever sees "the current payload text" and "the
+injection goal", both plain strings, never an AgentDojo `BaseAttack` instance or an MCP
+`PoisonedCase` — and needs no changes to either family's own `attack()` implementation.

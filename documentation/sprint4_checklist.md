@@ -6,22 +6,22 @@ Granular sub-steps for each task in Sprint 4 of [sprint_planning.md](sprint_plan
 
 ---
 
-## S4-01 — Feedback channel (2h) 🔴 — deps: S2-08
+## S4-01 — Feedback channel (2h) 🔴 — deps: S2-08 — done
 
-- [ ] Append an "## Implementation decisions for this project's Sprint 4" section to `docs/notes/adaptive_attacks.md` recording the architecture decision from the note above (mutate-the-output, not the attack internals) and why (`encoding_obfuscation` has no template string). This is the load-bearing decision every later S4 task assumes.
-- [ ] Create the `src/injection_pareto/adaptive/` package (`__init__.py`, empty).
-- [ ] In a new `src/injection_pareto/adaptive/feedback.py`, define `@dataclass EpisodeFeedback`: `success: bool`, `defense_intervened: bool`, `refusal_text: str | None` — exactly the three signals S4-01 names, no more.
-- [ ] Write `extract_feedback(conn: sqlite3.Connection, *, episode_id: int) -> EpisodeFeedback`:
+- [x] Append an "## Implementation decisions for this project's Sprint 4" section to `docs/notes/adaptive_attacks.md` recording the architecture decision from the note above (mutate-the-output, not the attack internals) and why (`encoding_obfuscation` has no template string). This is the load-bearing decision every later S4 task assumes.
+- [x] Create the `src/injection_pareto/adaptive/` package (`__init__.py`, empty).
+- [x] In a new `src/injection_pareto/adaptive/feedback.py`, define `@dataclass EpisodeFeedback`: `success: bool`, `defense_intervened: bool`, `refusal_text: str | None` — exactly the three signals S4-01 names, no more.
+- [x] Write `extract_feedback(conn: sqlite3.Connection, *, episode_id: int) -> EpisodeFeedback`:
   - `success` reads `episode.security` for that row (raise `ValueError` if the row's `injection_task_id` is `NULL` — this function is only ever called on an attacked episode inside the adaptive loop).
   - `defense_intervened` is `True` iff any `defense_event` row for the episode has `verdict = 'block'` (reuse `trace/queries.py::reconstruct_episode` rather than a new raw query, to stay consistent with how `scoring/security.py` already reads a trace).
   - `refusal_text` is the `content` of the last `step` row with `role = 'assistant'` and non-empty `content`, truncated to a fixed cap (e.g. 500 chars — this only ever feeds a mutation prompt, not a replay); `None` if no assistant step has any text.
-- [ ] Unit tests in `tests/test_adaptive_feedback.py`, built against a real trace DB fixture (insert rows directly via `trace/db.py` helpers, no live model call):
+- [x] Unit tests in `tests/test_adaptive_feedback.py` (8 tests), built against a real trace DB fixture (insert rows directly via `trace/db.py` helpers, no live model call):
   - full compromise (`episode.security = 1`) → `success=True`.
-  - a `defense_event` row with `verdict='block'` present, `episode.security = 0` → `defense_intervened=True`, `success=False`.
-  - no block, `security=0`, one assistant step with text → `refusal_text` populated and truncated correctly at the cap boundary.
+  - a `defense_event` row with `verdict='block'` present, `episode.security = 0` → `defense_intervened=True`, `success=False` (both a step-level and an episode-level block, as two separate tests).
+  - no block, `security=0`, one assistant step with text → `refusal_text` populated and truncated correctly at the cap boundary; a second test confirms an empty-content assistant step doesn't overwrite an earlier real one.
   - no assistant steps at all → `refusal_text is None`.
-  - calling `extract_feedback` on a benign episode (`injection_task_id IS NULL`) raises `ValueError`.
-- [ ] `ruff check .`, `mypy .`, `pytest tests/test_adaptive_feedback.py` clean.
+  - calling `extract_feedback` on a benign episode (`injection_task_id IS NULL`) raises `ValueError`; an unknown `episode_id` also raises `ValueError`.
+- [x] `ruff check .`, `mypy .`, full `pytest` suite (242 tests) all clean.
 
 ## S4-02 — Mutation engine (4h) 🔴 — deps: S4-01
 
