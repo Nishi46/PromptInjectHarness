@@ -185,3 +185,45 @@ between `dual_llm` and `no_defense`** -- 5/6 workspace pairs, 29/30 mcp
 pairs. Reported plainly per this project's S4-05/S4-07 "null result is
 still a result" precedent: on this task set, `dual_llm`'s utility effect is
 small, model-dependent, and bidirectional, not a one-sided tax.
+
+## S5-03: `CapabilityEnforcement` (D8) notes
+
+Implemented in `src/injection_pareto/defenses/capability_enforcement.py`,
+registered as `"capability_enforcement"` in `defenses/registry.py` with
+`sink_tools` defaulted to `None` (empty policy) -- S5-04 wires in the real
+per-suite policy via the registry's factory slot; no code change needed
+here for that, per this checklist's own "additive, not a rewrite"
+discipline. No separate zero-arg factory function was needed: every
+`__init__` param is keyword-defaulted, so `CapabilityEnforcement` itself is
+already a valid `Callable[[], Defense]`, same as `GuardModel`/`ToolAllowlist`.
+
+**One deliberate deviation from the checklist's literal wording, worth
+flagging for S5-04.** The checklist describes blocking when an argument's
+string value is "present in `self._tainted_values`" -- read literally, that's
+exact set membership (the *whole* argument value equals a tainted value).
+The implementation instead checks **substring containment**: a tainted
+value is blocked if it appears *anywhere inside* the argument's string, not
+only if it *is* the argument's string outright. Reasoning: the checklist's
+own S5-04 preview names the demonstration scenario as "a message body/text
+field **carrying** an account number or file contents that a tool result
+actually returned" -- a sink argument like a message body realistically
+embeds a tainted value amid other text (a greeting, other sentences), so it
+essentially never equals the tainted value exactly. An exact-match
+implementation would have compiled, passed every unit test written against
+short atomic values, and then silently failed to catch the actual
+motivating scenario the moment S5-04 builds a realistic multi-sentence
+body around it. `tests/test_capability_enforcement.py` exercises this
+directly (`test_list_argument_elements_are_scanned_like_tool_allowlist`
+embeds a tainted email inside a `cc` list; the sink-tool block test embeds
+a tainted account number inside a longer `body` string). The trusted-origin
+escape hatch (`tainted not in user_task_prompt`) is unaffected -- it was
+already framed as a substring check, matching `ToolAllowlist`'s own
+`value not in user_task_prompt` convention.
+
+**Known blind spot** (documented in the module's own top-of-file comment,
+restated here since it matters for how S5-04's policy is read): the taint
+set only ever contains what `_extract_candidate_values`'s regexes can find
+-- emails, URLs, and quoted substrings. A secret in some other shape (a
+bare number, an unquoted multi-word phrase) is never tagged and therefore
+never blockable, no matter what sink policy S5-04 configures. This is a
+property of the heuristic, not a bug to chase mid-sprint.
