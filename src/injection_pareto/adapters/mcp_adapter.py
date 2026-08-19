@@ -146,6 +146,7 @@ def run_mcp_episode(
     model_name: str,
     max_turns: int = _DEFAULT_MAX_TURNS,
     params: dict[str, Any] | None = None,
+    injection_text_override: str | None = None,
 ) -> EpisodeResult:
     """Drives one MCP-suite episode -- `(user_task_id, poisoned_case_id | None)`
     against `model_client` through `defense_stack` -- and writes the full
@@ -156,13 +157,22 @@ def run_mcp_episode(
     (see `docs/notes/mcp_suite.md`), so both are implemented directly:
     a plain system+user -> generate -> dispatch-tool-calls -> repeat loop,
     and `mcp.scoring`'s trace-based scorers in place of AgentDojo's own
-    `suite.run_task_with_pipeline` return values."""
+    `suite.run_task_with_pipeline` return values.
+
+    `injection_text_override` (S4-03) replaces `poisoned_case_id`'s own
+    `injection_text` with a caller-supplied string before `apply()` --
+    mirrors `agentdojo_adapter.run_episode`'s `injections_override`, and is
+    the hook the adaptive loop uses to replay a mutated payload. Ignored
+    when `poisoned_case_id` is `None`; when omitted, behavior is unchanged
+    from before this parameter existed."""
     task = get_task(user_task_id)
     servers = [load_named_server(name) for name in task.servers]
 
     injection_task: MCPInjectionTask | None = None
     if poisoned_case_id is not None:
         case = get_case(poisoned_case_id)
+        if injection_text_override is not None:
+            case = replace(case, injection_text=injection_text_override)
         injection_task = get_injection_task(poisoned_case_id)
         servers = [
             case.apply(server) if server.name == case.target_server else server

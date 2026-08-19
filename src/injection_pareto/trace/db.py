@@ -186,6 +186,64 @@ def insert_defense_event(
     return int(cursor.lastrowid)  # type: ignore[arg-type]
 
 
+def insert_adaptive_trial(
+    conn: sqlite3.Connection,
+    *,
+    run_id: int,
+    task_id: str,
+    defense: str,
+    attack_family: str,
+    suite: str,
+    budget: int,
+    started_at: str,
+) -> int:
+    cursor = conn.execute(
+        """
+        INSERT INTO adaptive_trial
+            (run_id, task_id, defense, attack_family, suite, budget, started_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (run_id, task_id, defense, attack_family, suite, budget, started_at),
+    )
+    conn.commit()
+    return int(cursor.lastrowid)  # type: ignore[arg-type]
+
+
+def insert_adaptive_round(
+    conn: sqlite3.Connection,
+    *,
+    trial_id: int,
+    round_index: int,
+    episode_id: int,
+    payload_text: str,
+    timestamp: str,
+) -> int:
+    """Does not commit — wrap a batch of these in `transaction(conn)`."""
+    cursor = conn.execute(
+        """
+        INSERT INTO adaptive_round (trial_id, round_index, episode_id, payload_text, timestamp)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (trial_id, round_index, episode_id, payload_text, timestamp),
+    )
+    return int(cursor.lastrowid)  # type: ignore[arg-type]
+
+
+def update_adaptive_trial_result(
+    conn: sqlite3.Connection,
+    *,
+    trial_id: int,
+    success: bool,
+    rounds_to_success: int | None,
+    ended_at: str,
+) -> None:
+    conn.execute(
+        "UPDATE adaptive_trial SET success = ?, rounds_to_success = ?, ended_at = ? WHERE id = ?",
+        (int(success), rounds_to_success, ended_at, trial_id),
+    )
+    conn.commit()
+
+
 def insert_cost_record(
     conn: sqlite3.Connection,
     *,

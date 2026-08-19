@@ -1,6 +1,8 @@
 from injection_pareto.trace.db import (
     connect,
     init_db,
+    insert_adaptive_round,
+    insert_adaptive_trial,
     insert_cost_record,
     insert_defense_event,
     insert_episode,
@@ -9,6 +11,7 @@ from injection_pareto.trace.db import (
     insert_tool_call,
     open_db,
     transaction,
+    update_adaptive_trial_result,
     update_episode_partial_compromise,
 )
 from injection_pareto.trace.queries import (
@@ -29,7 +32,10 @@ __all__ = [
     "insert_tool_call",
     "insert_defense_event",
     "insert_cost_record",
+    "insert_adaptive_trial",
+    "insert_adaptive_round",
     "update_episode_partial_compromise",
+    "update_adaptive_trial_result",
     "reconstruct_episode",
     "cost_summary_by_episode",
     "EpisodeTrace",

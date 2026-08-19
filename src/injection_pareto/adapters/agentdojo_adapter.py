@@ -309,11 +309,20 @@ def run_episode(
     model_name: str,
     attack_name: str | None = None,
     benchmark_version: str = BENCHMARK_VERSION,
+    injections_override: dict[str, str] | None = None,
 ) -> EpisodeResult:
     """Drives one AgentDojo episode — `(suite_name, user_task_id,
     injection_task_id | None)` against `model_client` through `defense_stack`
     — and writes the full trace (episode/step/tool_call/defense_event/
-    cost_record) to `conn` under `run_id`."""
+    cost_record) to `conn` under `run_id`.
+
+    `injections_override` (S4-03) lets a caller supply the exact
+    `{injection_point: payload}` mapping to use instead of computing it via
+    `load_attack(...).attack(...)` -- the hook the adaptive loop
+    (`adaptive/trial.py`) uses to replay a mutated payload on round 2+ of a
+    trial without re-deriving it from `attack_name`'s own attack class. When
+    omitted (the default), behavior is unchanged from before this
+    parameter existed."""
     suite = get_suite(benchmark_version, suite_name)
     user_task = suite.get_user_task_by_id(user_task_id)
 
@@ -351,8 +360,11 @@ def run_episode(
         if attack_name is None:
             raise ValueError("attack_name is required when injection_task_id is set")
         injection_task = suite.get_injection_task_by_id(injection_task_id)
-        attack = load_attack(resolve_attack_name(attack_name), suite, pipeline)
-        injections = attack.attack(user_task, injection_task)
+        if injections_override is not None:
+            injections = injections_override
+        else:
+            attack = load_attack(resolve_attack_name(attack_name), suite, pipeline)
+            injections = attack.attack(user_task, injection_task)
 
     runtime_class = _make_defended_runtime_class(defense_stack, context, recorder)
 

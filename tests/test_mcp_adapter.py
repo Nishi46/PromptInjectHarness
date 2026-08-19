@@ -10,6 +10,7 @@ from injection_pareto.adapters.mcp_adapter import _parse_fallback_tool_call, run
 from injection_pareto.clients.base import ModelRequest, ModelResponse
 from injection_pareto.defenses.no_defense import NoDefense
 from injection_pareto.defenses.stack import DefenseStack
+from injection_pareto.mcp.poisoned import get_case
 from injection_pareto.trace.db import connect, init_db, insert_run
 from injection_pareto.trace.queries import reconstruct_episode
 from injection_pareto.types import CostRecord, DefenseContext, HookResult, ToolCall, Verdict
@@ -160,6 +161,59 @@ def test_run_mcp_episode_full_compromise_writes_complete_trace(tmp_path: Path) -
         "SELECT model FROM cost_record WHERE episode_id = ?", (result.episode_id,)
     ).fetchall()
     assert [r["model"] for r in cost_rows] == ["fake", "fake", "fake"]  # one per model response
+
+
+# ---------------------------------------------------------------------------
+# injection_text_override (S4-03): replaying a mutated payload
+# ---------------------------------------------------------------------------
+
+
+def test_injection_text_override_replaces_the_cases_own_payload(tmp_path: Path) -> None:
+    conn, run_id = _new_db(tmp_path)
+    case = get_case(CASE_ID)
+    override_text = "OVERRIDDEN: an entirely different injection payload"
+    client = _ScriptedClient([_response("All done.")])
+
+    run_mcp_episode(
+        conn=conn,
+        run_id=run_id,
+        user_task_id=TASK_ID,
+        poisoned_case_id=CASE_ID,
+        model_client=client,
+        defense_stack=DefenseStack([NoDefense()]),
+        defense_name="no_defense",
+        model_name="fake",
+        injection_text_override=override_text,
+    )
+
+    tools = client.requests[0].tools
+    assert tools is not None
+    target = next(t for t in tools if t["function"]["name"] == case.target_tool)
+    description = target["function"]["description"]
+    assert override_text in description
+    assert case.injection_text not in description
+
+
+def test_omitting_injection_text_override_uses_the_cases_own_payload(tmp_path: Path) -> None:
+    conn, run_id = _new_db(tmp_path)
+    case = get_case(CASE_ID)
+    client = _ScriptedClient([_response("All done.")])
+
+    run_mcp_episode(
+        conn=conn,
+        run_id=run_id,
+        user_task_id=TASK_ID,
+        poisoned_case_id=CASE_ID,
+        model_client=client,
+        defense_stack=DefenseStack([NoDefense()]),
+        defense_name="no_defense",
+        model_name="fake",
+    )
+
+    tools = client.requests[0].tools
+    assert tools is not None
+    target = next(t for t in tools if t["function"]["name"] == case.target_tool)
+    assert case.injection_text in target["function"]["description"]
 
 
 # ---------------------------------------------------------------------------

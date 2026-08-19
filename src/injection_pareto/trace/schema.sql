@@ -72,6 +72,37 @@ CREATE TABLE IF NOT EXISTS cost_record (
     timestamp TEXT NOT NULL
 );
 
+-- S4-03: one adaptive trial groups the up-to-`budget` episodes (rounds) an
+-- adaptive attacker runs against a single (run, task, defense, attack
+-- family) point. Each round's own full trace (step/tool_call/defense_event)
+-- already lives under its own `episode` row via the existing tables above --
+-- `adaptive_round` just links a trial to the sequence of episodes it ran.
+CREATE TABLE IF NOT EXISTS adaptive_trial (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id INTEGER NOT NULL REFERENCES run(id),
+    task_id TEXT NOT NULL,
+    defense TEXT NOT NULL,
+    attack_family TEXT NOT NULL,
+    suite TEXT NOT NULL,
+    budget INTEGER NOT NULL,
+    success INTEGER,
+    -- 1-indexed round number of the first successful round, NULL if the
+    -- trial exhausted `budget` rounds without success (S4-04) -- distinct
+    -- from "ran every round", queryable via IS NULL.
+    rounds_to_success INTEGER,
+    started_at TEXT NOT NULL,
+    ended_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS adaptive_round (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    trial_id INTEGER NOT NULL REFERENCES adaptive_trial(id),
+    round_index INTEGER NOT NULL,
+    episode_id INTEGER NOT NULL REFERENCES episode(id),
+    payload_text TEXT NOT NULL,
+    timestamp TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_episode_run_id ON episode(run_id);
 CREATE INDEX IF NOT EXISTS idx_step_episode_id ON step(episode_id);
 CREATE INDEX IF NOT EXISTS idx_tool_call_step_id ON tool_call(step_id);
@@ -79,3 +110,5 @@ CREATE INDEX IF NOT EXISTS idx_defense_event_episode_id ON defense_event(episode
 CREATE INDEX IF NOT EXISTS idx_defense_event_step_id ON defense_event(step_id);
 CREATE INDEX IF NOT EXISTS idx_cost_record_episode_id ON cost_record(episode_id);
 CREATE INDEX IF NOT EXISTS idx_cost_record_run_id ON cost_record(run_id);
+CREATE INDEX IF NOT EXISTS idx_adaptive_trial_run_id ON adaptive_trial(run_id);
+CREATE INDEX IF NOT EXISTS idx_adaptive_round_trial_id ON adaptive_round(trial_id);

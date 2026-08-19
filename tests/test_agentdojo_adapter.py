@@ -1,9 +1,15 @@
 import json
 from pathlib import Path
+from typing import Any
 
+import pytest
+from agentdojo.agent_pipeline.base_pipeline_element import BasePipelineElement
+from agentdojo.attacks.attack_registry import load_attack
 from agentdojo.functions_runtime import FunctionCall, FunctionsRuntime, make_function
+from agentdojo.task_suite.load_suites import get_suite
 
 from injection_pareto.adapters.agentdojo_adapter import (
+    BENCHMARK_VERSION,
     _agentdojo_messages_to_ours,
     _build_tool_schema,
     _DefenseEventRecord,
@@ -12,8 +18,10 @@ from injection_pareto.adapters.agentdojo_adapter import (
     _PreGenerateElement,
     _response_to_assistant_message,
     _write_episode_trace,
+    run_episode,
 )
-from injection_pareto.clients.base import ModelResponse
+from injection_pareto.attacks import resolve_attack_name
+from injection_pareto.clients.base import ModelRequest, ModelResponse
 from injection_pareto.defenses.stack import DefenseStack
 from injection_pareto.trace import connect, init_db, insert_episode, insert_run
 from injection_pareto.types import (
@@ -25,6 +33,12 @@ from injection_pareto.types import (
     ToolResult,
     Verdict,
 )
+
+# Same known-good combo as S1-08's reproduction / test_attack_families.py: a
+# real suite/task/injection task, no live model call needed.
+_SUITE_NAME = "workspace"
+_USER_TASK_ID = "user_task_0"
+_INJECTION_TASK_ID = "injection_task_0"
 
 
 def greet(name: str) -> str:
@@ -447,3 +461,118 @@ def test_write_episode_trace_does_not_misalign_cursor_on_invalid_tool_name(tmp_p
     result_event = next(e for e in defense_events if e["hook"] == "on_tool_result")
     assert result_event["verdict"] == "block"
     assert json.loads(result_event["detail_json"])["tool_call_id"] == send_email_id
+
+
+class _UnusedModelClient:
+    """A `ModelClient` that must never be called -- used in the
+    `injections_override` tests below, which monkeypatch
+    `suite.run_task_with_pipeline` itself, so the pipeline (and therefore
+    this client) never actually runs."""
+
+    cache_model_id = "fake:unused"
+
+    def generate(self, request: ModelRequest) -> ModelResponse:
+        raise AssertionError("model_client.generate should not be called")
+
+
+def _run_episode_capturing_injections(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    injections_override: dict[str, str] | None,
+    patch_load_attack: bool,
+) -> dict[str, Any]:
+    """Shared plumbing for the two `injections_override` tests below:
+    monkeypatches the real `workspace` suite's `run_task_with_pipeline` to
+    capture the `injections` dict it was called with instead of actually
+    running the pipeline (no model call needed), runs `run_episode` for
+    real against it, and returns the captured call's kwargs."""
+    suite = get_suite(BENCHMARK_VERSION, _SUITE_NAME)
+    captured: dict[str, Any] = {}
+
+    def _fake_run_task_with_pipeline(
+        pipeline: object,
+        user_task: object,
+        injection_task: object,
+        injections: dict[str, str],
+        *,
+        runtime_class: object,
+    ) -> tuple[bool, bool]:
+        captured["injections"] = injections
+        return True, True
+
+    monkeypatch.setattr(suite, "run_task_with_pipeline", _fake_run_task_with_pipeline)
+
+    if patch_load_attack:
+
+        def _boom(*args: object, **kwargs: object) -> object:
+            raise AssertionError("load_attack should not be called when injections_override is set")
+
+        monkeypatch.setattr("injection_pareto.adapters.agentdojo_adapter.load_attack", _boom)
+
+    conn = connect(tmp_path / "trace.db")
+    init_db(conn)
+    try:
+        run_id = insert_run(
+            conn,
+            config_hash="x",
+            model="llama3.2:3b",
+            defense_stack="no_defense",
+            suite=_SUITE_NAME,
+            started_at="t0",
+        )
+        result = run_episode(
+            conn=conn,
+            run_id=run_id,
+            suite_name=_SUITE_NAME,
+            user_task_id=_USER_TASK_ID,
+            injection_task_id=_INJECTION_TASK_ID,
+            model_client=_UnusedModelClient(),
+            defense_stack=DefenseStack([_AllowDefense()]),
+            defense_name="no_defense",
+            model_name="llama3.2:3b",
+            attack_name="naive",
+            injections_override=injections_override,
+        )
+    finally:
+        conn.close()
+
+    captured["result"] = result
+    return captured
+
+
+def test_injections_override_bypasses_load_attack_and_reaches_the_suite(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    override = {"injection_point": "an entirely mutated payload"}
+
+    captured = _run_episode_capturing_injections(
+        tmp_path, monkeypatch, injections_override=override, patch_load_attack=True
+    )
+
+    assert captured["injections"] == override
+    result = captured["result"]
+    assert result.utility is True
+    assert result.security is True
+
+
+def test_omitting_injections_override_reproduces_todays_load_attack_behavior(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured = _run_episode_capturing_injections(
+        tmp_path, monkeypatch, injections_override=None, patch_load_attack=False
+    )
+
+    class _FakePipeline(BasePipelineElement):
+        name = "local-llama3.2:3b-no_defense"
+
+        def query(self, *args: object, **kwargs: object) -> object:
+            raise NotImplementedError
+
+    suite = get_suite(BENCHMARK_VERSION, _SUITE_NAME)
+    user_task = suite.get_user_task_by_id(_USER_TASK_ID)
+    injection_task = suite.get_injection_task_by_id(_INJECTION_TASK_ID)
+    attack = load_attack(resolve_attack_name("naive"), suite, _FakePipeline())
+    expected_injections = attack.attack(user_task, injection_task)
+
+    assert captured["injections"] == expected_injections
