@@ -163,11 +163,10 @@ def test_never_succeeding_trial_runs_exactly_the_full_budget(tmp_path: Path) -> 
     assert trial_row["rounds_to_success"] is None
 
 
-def test_a_successful_round_marks_the_trial_successful_but_does_not_stop_it(
-    tmp_path: Path,
-) -> None:
-    """S4-03 scope only: early-stop is S4-04's job. A trial that succeeds on
-    round 2 of 3 still runs all 3 rounds here."""
+def test_a_successful_round_stops_the_trial_immediately(tmp_path: Path) -> None:
+    """S4-04: a trial that succeeds on round 2 of a 3-round budget stops
+    right there -- round 3 never runs, and round 2's payload never gets
+    mutated (there's nothing left to feed a mutation into)."""
     conn, run_id = _db(tmp_path)
     run_episode_fn, calls = _fake_run_episode_fn([False, True, False])
     mutate_fn, mutate_calls = _fake_mutate_payload_fn()
@@ -192,10 +191,83 @@ def test_a_successful_round_marks_the_trial_successful_but_does_not_stop_it(
         budget=3,
     )
 
-    assert result.rounds_run == 3
+    assert result.rounds_run == 2
     assert result.success is True
-    assert len(calls) == 3
-    assert mutate_calls == [2, 3]
+    assert result.rounds_to_success == 2
+    assert len(calls) == 2
+    assert mutate_calls == [2]  # only the round-1 -> round-2 mutation ever happens
+
+    round_rows = conn.execute(
+        "SELECT round_index FROM adaptive_round WHERE trial_id = ? ORDER BY round_index",
+        (result.trial_id,),
+    ).fetchall()
+    assert [r["round_index"] for r in round_rows] == [1, 2]
+
+    trial_row = conn.execute(
+        "SELECT success, rounds_to_success FROM adaptive_trial WHERE id = ?",
+        (result.trial_id,),
+    ).fetchone()
+    assert (trial_row["success"], trial_row["rounds_to_success"]) == (1, 2)
+
+
+def test_success_on_round_1_runs_nothing_else(tmp_path: Path) -> None:
+    conn, run_id = _db(tmp_path)
+    run_episode_fn, calls = _fake_run_episode_fn([True])
+    mutate_fn, mutate_calls = _fake_mutate_payload_fn()
+
+    result = run_adaptive_trial(
+        conn=conn,
+        run_id=run_id,
+        suite="workspace",
+        task_id="user_task_0",
+        defense_name="no_defense",
+        attack_family="naive",
+        goal="exfiltrate the secret",
+        base_payload="TODO: do the thing",
+        user_task_id="user_task_0",
+        injection_task_id="injection_task_0",
+        injection_points=("injection_point",),
+        model_client=_UnusedModelClient(),
+        model_name="fake",
+        defense_stack_factory=_defense_stack_factory,
+        run_episode_fn=run_episode_fn,
+        mutate_payload_fn=mutate_fn,
+    )
+
+    assert result.rounds_run == 1
+    assert result.rounds_to_success == 1
+    assert len(calls) == 1
+    assert mutate_calls == []
+
+
+def test_never_succeeding_trial_has_rounds_to_success_none(tmp_path: Path) -> None:
+    conn, run_id = _db(tmp_path)
+    run_episode_fn, _ = _fake_run_episode_fn([False, False, False])
+    mutate_fn, _ = _fake_mutate_payload_fn()
+
+    result = run_adaptive_trial(
+        conn=conn,
+        run_id=run_id,
+        suite="workspace",
+        task_id="user_task_0",
+        defense_name="no_defense",
+        attack_family="naive",
+        goal="exfiltrate the secret",
+        base_payload="TODO: do the thing",
+        user_task_id="user_task_0",
+        injection_task_id="injection_task_0",
+        injection_points=("injection_point",),
+        model_client=_UnusedModelClient(),
+        model_name="fake",
+        defense_stack_factory=_defense_stack_factory,
+        run_episode_fn=run_episode_fn,
+        mutate_payload_fn=mutate_fn,
+        budget=3,
+    )
+
+    assert result.success is False
+    assert result.rounds_to_success is None
+    assert result.rounds_run == 3
 
 
 def test_explicit_budget_overrides_the_default_and_is_recorded(tmp_path: Path) -> None:

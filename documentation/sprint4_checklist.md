@@ -58,14 +58,14 @@ Granular sub-steps for each task in Sprint 4 of [sprint_planning.md](sprint_plan
 - [x] Documented the one known limitation plainly in `trial.py`'s module docstring: unlike `sweep/runner.py`'s per-episode resumability, a trial interrupted mid-loop is **not** resumed round-by-round — re-running it starts over from round 1. Acceptable at S4-05's cost-capped scale.
 - [x] `ruff check .`, `mypy .`, full `pytest` suite (286 tests) all clean.
 
-## S4-04 — Early-stop + `rounds_to_success` (1h) 🟡 — deps: S4-03
+## S4-04 — Early-stop + `rounds_to_success` (1h) 🟡 — deps: S4-03 — done
 
-- [ ] In `run_adaptive_trial`'s loop, add the early-stop branch: after computing each round's `EpisodeFeedback`, if `feedback.success` is `True`, stop iterating immediately — do not run remaining rounds, do not compute a next mutation.
-- [ ] Compute `rounds_to_success`: the 1-indexed round number of the first successful round, or `None` if the loop exhausted `budget` rounds without success (explicitly distinct from "ran 20 rounds", queryable via `IS NULL`).
-- [ ] Update `AdaptiveTrialResult`/`update_adaptive_trial_result` call site to pass the real `rounds_to_success` and `success` values (replacing S4-03's temporary `None`/loop-through-all-rounds placeholder).
-- [ ] Docstring note on `rounds_to_success`, quoting the sprint plan directly: "a richer signal than binary ASR" — a defense broken on round 2 is meaningfully weaker than one broken on round 19, even though both count as `success=True` under ASR@20.
-- [ ] Unit tests added to `tests/test_adaptive_trial.py`: a fake feedback sequence that succeeds on round 7 → loop stops after round 7, exactly 7 `adaptive_round` rows exist, `rounds_to_success == 7`, `mutate_payload_fn` was called exactly 6 times (never called for a round that won't run); a fake sequence that never succeeds → 20 rounds run, `rounds_to_success is None`; a fake sequence that succeeds on round 1 → exactly 1 `adaptive_round` row, `mutate_payload_fn` never called at all.
-- [ ] `ruff check .`, `mypy .`, `pytest tests/test_adaptive_trial.py` clean.
+- [x] In `run_adaptive_trial`'s loop, added the early-stop branch: right after computing each round's `EpisodeFeedback`, if `feedback.success` is `True`, sets `rounds_to_success` and `break`s immediately — no remaining rounds run, no mutation is computed for a round that will never happen.
+- [x] `rounds_to_success`: the 1-indexed round number of the first successful round, or `None` if the loop exhausted `budget` rounds without success (queryable via `IS NULL`; distinct from "ran every round").
+- [x] Updated the `update_adaptive_trial_result`/`AdaptiveTrialResult` call sites to pass the real `rounds_to_success` and `success` values, replacing S4-03's temporary always-`None` placeholder.
+- [x] Docstring updated: replaced the "S4-03 scope only, no early exit yet" note with the real early-stop behavior and the "richer signal than binary ASR" rationale, quoting the sprint plan's own framing (round 2 vs. round 19 both count as `success=True` under ASR@20 but aren't equally weak).
+- [x] Unit tests in `tests/test_adaptive_trial.py` (now 11 tests total): rewrote the old "does not stop it" S4-03 placeholder test into `test_a_successful_round_stops_the_trial_immediately` (success on round 2 of a 3-round budget → `rounds_run=2`, `rounds_to_success=2`, only 2 `adaptive_round` rows, exactly 1 mutation call, DB row confirms `success=1`/`rounds_to_success=2`); added `test_success_on_round_1_runs_nothing_else` (1 episode, 0 mutation calls); added `test_never_succeeding_trial_has_rounds_to_success_none` (a second, budget=3 confirmation alongside the existing full-budget-20 test).
+- [x] `ruff check .`, `mypy .`, full `pytest` suite (288 tests) all clean.
 
 ## S4-05 — Run adaptive sweep: 6 defenses × 5 families × 2 models, cost-capped (4h + wall) 🔴 — deps: S4-03
 

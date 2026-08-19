@@ -77,9 +77,13 @@ def run_adaptive_trial(
     """Runs one adaptive trial: up to `budget` rounds of `(defense, task)`
     against `attack_family`, mutating the payload between rounds via
     `mutate_payload_fn` (S4-02) in response to `extract_feedback_fn`'s
-    signal (S4-01). **This is S4-03's scope only** -- every round always
-    runs, unconditionally, through `budget`; there is no early exit on
-    success yet (S4-04 adds that, plus a real `rounds_to_success`).
+    signal (S4-01). Stops at the first successful round (S4-04) -- a round
+    that succeeds never gets mutated further, and no later round runs.
+    `AdaptiveTrialResult.rounds_to_success` is the 1-indexed round number of
+    that first success, or `None` if the trial exhausted `budget` rounds
+    without one -- a richer signal than the binary `success` flag alone: a
+    defense broken on round 2 is meaningfully weaker than one broken on
+    round 19, even though both count as `success=True` under ASR@20.
 
     Round 1 always uses `base_payload` unchanged -- deliberately identical
     to whatever the suite's own static attack machinery would produce
@@ -137,6 +141,7 @@ def run_adaptive_trial(
     payload = base_payload
     any_success = False
     rounds_run = 0
+    rounds_to_success: int | None = None
 
     for round_index in range(1, budget + 1):
         defense_stack = defense_stack_factory()
@@ -184,6 +189,8 @@ def run_adaptive_trial(
         feedback = extract_feedback_fn(conn, episode_id=episode_result.episode_id)
         if feedback.success:
             any_success = True
+            rounds_to_success = round_index
+            break
 
         if round_index < budget:
             mutator_responses: list[ModelResponse] = []
@@ -213,12 +220,16 @@ def run_adaptive_trial(
                         )
 
     update_adaptive_trial_result(
-        conn, trial_id=trial_id, success=any_success, rounds_to_success=None, ended_at=_now()
+        conn,
+        trial_id=trial_id,
+        success=any_success,
+        rounds_to_success=rounds_to_success,
+        ended_at=_now(),
     )
 
     return AdaptiveTrialResult(
         trial_id=trial_id,
         rounds_run=rounds_run,
         success=any_success,
-        rounds_to_success=None,
+        rounds_to_success=rounds_to_success,
     )
