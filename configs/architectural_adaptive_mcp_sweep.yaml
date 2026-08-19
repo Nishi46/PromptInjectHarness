@@ -1,0 +1,68 @@
+# S5-05's adaptive-attack sweep for the architectural defenses (D7
+# `dual_llm`, D8 `capability_enforcement`) on the MCP suite. Copy of
+# `configs/adaptive_mcp_sweep.yaml` (S4-06) verbatim except `defenses`,
+# same `output.trace_db` reuse decision as `architectural_adaptive_sweep.yaml`.
+#
+# `dual_llm` listed first, same reason: S5-05's 1-trial sanity check relies
+# on trial index 0 landing on `dual_llm`.
+#
+# Grid arithmetic:
+#   2 defenses x 4 sub-families x 2 models x 1 task = 16 trials
+#   16 trials x 20 rounds/trial (budget, before any early stop) = 320 episodes, worst case
+#   + up to 1 extra mutator LLM call per round that doesn't succeed
+#   + for `dual_llm` trials: 1 extra quarantine-model call per tool result
+# Same ASR@1 == 0.000 precedent as `architectural_adaptive_sweep.yaml`'s
+# header comment -- budget the full worst-case count.
+
+name: architectural_adaptive_mcp_sweep
+
+models:
+  - id: L1
+    provider: ollama
+    model: llama3.2:3b
+    digest: sha256:a80c4f17acd5
+  - id: L2
+    provider: ollama
+    model: llama3.1:latest
+    digest: sha256:46e0c10c039e
+
+defenses:
+  - dual_llm
+  - capability_enforcement
+
+suites:
+  - mcp
+
+attacks:
+  - direct_instruction
+  - fake_usage_note
+  - fake_precondition
+  - cross_tool_redirection
+
+tasks: {} # unused for the "mcp" suite (see mcp_tasks below); required key, kept empty
+
+mcp_tasks:
+  - mcp_file_storage_0
+  - mcp_ticketing_0
+  - mcp_crm_0
+  - mcp_calendar_0
+  - mcp_payments_0
+  - mcp_code_search_0
+  - mcp_analytics_0
+  - mcp_email_0
+  - mcp_messaging_0
+  - mcp_project_management_0
+  - mcp_hr_directory_0
+  - mcp_cloud_infra_0
+  - mcp_document_signing_0
+  - mcp_expense_reporting_0
+  - mcp_knowledge_base_0
+
+mcp_poisoned_cases:
+  direct_instruction: poison_direct_instruction_file_storage_list_files
+  fake_usage_note: poison_fake_usage_note_email_get_email
+  fake_precondition: poison_fake_precondition_payments_get_transaction
+  cross_tool_redirection: poison_cross_tool_redirection_crm_search_contacts
+
+output:
+  trace_db: runs/local/adaptive_mcp_sweep/trace.db

@@ -6,12 +6,15 @@
 # re-running a duplicate benign pass just to get a `no_defense` column to
 # compare against.
 #
-# S5-02 only runs this config's benign (`attack: null`) points -- the
-# utility-tax measurement over all 15 benign tasks. The attacked points
-# (all 4 sub-families) are deliberately deferred to S5-05, same rationale
-# as `configs/architectural_static_sweep.yaml`'s header comment. `defenses`
-# gains `capability_enforcement` once S5-03/S5-04 land it -- at that point
-# this same file (not a new one) is what S5-05 runs for the attacked passes.
+# S5-02 ran only this config's benign (`attack: null`) points -- the
+# utility-tax measurement over all 15 benign tasks -- with `defenses:
+# [dual_llm]`. S5-05 adds `capability_enforcement` and runs the attacked
+# points (all 4 sub-families) for both defenses, same config-hash-changes-
+# so-the-benign-pass-re-runs reasoning as `architectural_static_sweep.yaml`'s
+# header comment (a small, bounded, still-$0 duplication -- 30 episodes,
+# not a bug). `dual_llm` listed first below for the same reason: S5-05's
+# 1-trial adaptive sanity check picks trial index 0, which must land on
+# `dual_llm`.
 
 name: architectural_mcp_sweep
 
@@ -27,6 +30,7 @@ models:
 
 defenses:
   - dual_llm
+  - capability_enforcement
 
 suites:
   - mcp

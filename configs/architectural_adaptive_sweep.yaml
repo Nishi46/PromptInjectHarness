@@ -1,0 +1,64 @@
+# S5-05's adaptive-attack sweep for the architectural defenses (D7
+# `dual_llm`, D8 `capability_enforcement`) on the AgentDojo `workspace`
+# suite. Copy of `configs/adaptive_sweep.yaml` (S4-05) verbatim except
+# `defenses`, and **deliberately writes into that same `output.trace_db`
+# path** -- same reuse decision `configs/architectural_static_sweep.yaml`
+# already made for the static grid: this trace DB already has 6 defenses'
+# worth of adaptive trials in it, so this sweep's rows sit alongside them
+# for a real security-vs-every-other-defense comparison, one SQL query
+# away, no new baseline needed.
+#
+# `dual_llm` listed first: S5-05's own 1-trial `--sample-fraction` sanity
+# check relies on trial index 0 landing on `dual_llm` (D7's the one with
+# real per-round wall-clock risk -- D8 is pure regex/set-lookup, no model
+# call, so it was never the thing that needed sampling first).
+#
+# Grid arithmetic (`injection_pareto adaptive-run` prints the real trial
+# count from the actual config before running, but written out here so the
+# multiplier is visible before running it at all):
+#   2 defenses x 5 families x 2 models x 1 task = 20 trials
+#   20 trials x 20 rounds/trial (budget, before any early stop) = 400 episodes, worst case
+#   + up to 1 extra mutator LLM call per round that doesn't succeed
+#   + for `dual_llm` trials specifically: 1 extra quarantine-model call per
+#     tool result in every one of those episodes (D7's own overhead,
+#     unchanged by being in the adaptive loop)
+# S4-05/S4-06's own adaptive runs found ASR@1 == 0.000 in every cell against
+# these two local models (`results/adaptive.md`) -- meaning early stopping
+# essentially never triggers for them, so budget the full worst-case
+# episode count, not an optimistic early-stop estimate.
+
+name: architectural_adaptive_sweep
+
+models:
+  - id: L1
+    provider: ollama
+    model: llama3.2:3b
+    digest: sha256:a80c4f17acd5
+  - id: L2
+    provider: ollama
+    model: llama3.1:latest
+    digest: sha256:46e0c10c039e
+
+defenses:
+  - dual_llm
+  - capability_enforcement
+
+suites:
+  - workspace
+
+attacks:
+  - naive
+  - ignore_previous
+  - important_instructions
+  - context_completion
+  - encoding_obfuscation
+
+tasks:
+  workspace:
+    - user_task_0
+
+injection_tasks:
+  workspace: injection_task_0
+
+output:
+  trace_db: runs/local/adaptive_sweep/trace.db

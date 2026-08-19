@@ -6,14 +6,19 @@
 # sweep's comparison baseline for free, rather than re-running a duplicate
 # benign pass just to get a `no_defense` column to compare against.
 #
-# S5-02 only runs this config's benign (`attack: null`) points -- the
-# utility-tax measurement. The attacked points (all 5 families) are
-# deliberately deferred to S5-05: D7 makes one extra quarantine-model call
-# per tool result, so its wall-clock cost is sampled first (S4-05's own
-# "measure before committing to the full grid" precedent) rather than run
-# blind here. `defenses` gains `capability_enforcement` once S5-03/S5-04
-# land it -- at that point this same file (not a new one) is what S5-05
-# runs for the attacked passes.
+# S5-02 ran only this config's benign (`attack: null`) points -- the
+# utility-tax measurement -- with `defenses: [dual_llm]`. S5-05 adds
+# `capability_enforcement` (now that S5-03/S5-04 have landed it) and runs
+# the attacked points (all 5 families) for both defenses, appending to the
+# same trace DB. Changing `defenses` changes this config's hash
+# (`sweep/runner.py::_config_hash`), so the earlier `dual_llm` benign pass
+# gets a fresh `run` row and re-executes here too -- a small, bounded,
+# still-$0 duplication (6 episodes), not a bug: the alternative (a
+# throwaway single-defense config just to avoid it) is more machinery than
+# the reuse it would save. `dual_llm` listed first below is deliberate --
+# S5-05's own 1-trial adaptive sanity check picks trial index 0, and
+# `expand_run_specs`/`expand_adaptive_trial_points` iterate `defenses` in
+# declaration order, so index 0 must land on `dual_llm`.
 
 name: architectural_static_sweep
 
@@ -29,6 +34,7 @@ models:
 
 defenses:
   - dual_llm
+  - capability_enforcement
 
 suites:
   - workspace
