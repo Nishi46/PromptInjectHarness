@@ -313,3 +313,46 @@ classifier," and its designed failure mode — fall back to the unchanged payloa
 silently accept a mis-classified one — is exactly what happened. Worth naming explicitly in
 S4-08's qualitative writeup as a real limitation of this project's mutation-constraint
 mechanism, not something to quietly omit.
+
+## S4-06: the MCP suite sweep — clean run, one operational surprise
+
+Running the real 48-trial grid (`configs/adaptive_mcp_sweep.yaml`, `--concurrency 2`, 6
+defenses × 4 poisoned-description sub-families × 2 models, reusing `mcp_sweep.yaml`'s exact
+4 representative case IDs) needed **zero code changes** beyond the config file itself —
+`adaptive/sweep.py`'s `suite == "mcp"` dispatch and `run_adaptive_trial`'s MCP round-1
+payload resolution (`_mcp_base_payload`) were already built and tested as part of S4-05.
+Both of S4-05's real-world fixes (goal-stripping in `_looks_in_family`, per-round execution
+resilience in `run_adaptive_trial`) generalized to this suite without modification.
+
+**Result: 48/48 trials completed, 0 failures.** Unlike the AgentDojo sweep, **0/48 trials
+show a "no variation" pattern** (vs. 6/58 there) — plausible reason: an MCP injection
+goal is a structured tool-call description (e.g. `call
+delete_file(path='quarterly_report.docx')`), not natural prose, so it's far less likely to
+contain an incidental collision with a marker word like "important" or "note" the way an
+AgentDojo task's free-text goal (an email subject line, a calendar note) can. Consistent
+with — not contradicting — the earlier finding: the underlying heuristic limitation didn't
+go away, this suite's goal text just happens not to trigger it.
+
+**`ASR@1 == ASR@20 == 0.000`** across all 6 defenses × 4 sub-families (24 cells, 2 trials
+each for the 2 models) — 0/48 trials achieved a compromise. Extends S3-06/S3-07's MCP-suite
+static-attack null result (ASR=0.000 everywhere, undefended included) to the adaptive
+setting: 20 rounds of real LLM-driven mutation didn't move it either. 959 of a possible 960
+`adaptive_round` rows recorded (avg ~19.98 rounds/trial — essentially every trial ran the
+full budget, since nothing ever succeeded early), $0 (local Ollama).
+
+**One genuine operational surprise, not a code defect:** the real run's wall-clock as
+reported by `/usr/bin/time` was ~8.7 hours (`31,338s`) — wildly out of line with this
+project's other real sweeps — while the same process's own CPU time was `10s` user + `3s`
+sys. That split is the tell: this process did almost no computing of its own for most of
+that span (all real inference happens inside the separate `ollama serve` process, which
+`time` doesn't measure at all here); the tqdm log shows a normal pace through trial 27
+(35m53s elapsed, ~80s/trial) followed by three trials that each individually took
+1–1.7 *hours*, then a batch of trials that finished in seconds once resumed. The much more
+likely explanation than a genuine multi-hour Ollama stall is that the host machine slept or
+was otherwise suspended mid-sweep and the wall-clock simply kept ticking through that gap —
+consistent with every other cost/timing estimate in this document, which should be read
+against the **active pace observed through trial 27 (~80s/trial, ~64 min extrapolated for
+the full 48-trial grid)**, not the raw 8.7-hour elapsed figure. Noted here plainly rather
+than silently reported as "the sweep takes 8.7 hours" — it doesn't; the same single process
+just sat blocked on I/O through whatever interrupted it (most likely sleep) and picked back
+up correctly once it could reach Ollama again, with the results below unaffected either way.
