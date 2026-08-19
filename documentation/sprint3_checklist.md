@@ -84,13 +84,13 @@ This was the integration task — `sweep/runner.py::run_sweep`/`_run_point` prev
 - [x] **A genuine, not-fixed finding, kept as-is**: across all 48 attacked episodes in the final sweep, `security=True` never once occurred (`ASR=0.000` for every defense × sub-family, undefended included) — exactly matching S2-11's own static-baseline finding on the same model tier and Appendix A.5's stated risk. Not something to engineer around; carried into S3-07 as a real result.
 - [x] Full `pytest` suite (234 tests), `ruff check .`, and `mypy .` all clean after the change.
 
-## S3-07 — `results/mcp_suite.md` + written analysis (2h) 🟡 — deps: S3-06
+## S3-07 — `results/mcp_suite.md` + written analysis (2h) 🟡 — deps: S3-06 — done
 
-- [ ] Write `scripts/generate_mcp_suite_results.py`, mirroring `scripts/generate_static_baseline.py`'s pattern (security table by defense/sub-family/model, utility table, cost/latency table) — reuse `trace/queries.py::cost_summary_by_episode` and `scoring/utility.py::benign_utility_rate` unmodified, since both are already suite-agnostic.
-- [ ] Add a schema-path-vs-data-path comparison table: join `results/static_baseline.md`'s per-defense ASR (data-path attacks, S2-11's sweep) against the new per-defense ASR on the MCP suite (schema-path attacks) — one script argument per trace DB.
-- [ ] Write the analysis section addressing the sprint's stated hypothesis directly ("spotlighting and delimiting will underperform here because they mark untrusted *data*, while the poisoned content arrives as trusted *schema*") — state plainly whether the comparison table supports or contradicts it; let the data judge, don't assert from intuition.
-- [ ] Confirm the acceptance criterion: every number in `results/mcp_suite.md` is rendered by the script from a live query, never hand-typed — re-running the script against the same trace DB reproduces the file byte-for-byte (modulo the generation timestamp).
-- [ ] Leave the commit to the user, per this project's standing instruction not to run `git commit` unless explicitly asked.
+- [x] Wrote `scripts/generate_mcp_suite_results.py`, mirroring `scripts/generate_static_baseline.py`'s pattern exactly: `_security_table`/`SecurityRow` and `_cost_table`/`CostRow`/`_guard_score_summary` are the identical query shapes (purely generic over `episode`/`run`/`defense_event`, no AgentDojo-specific columns — needed zero changes to run against the MCP suite's trace DB), plus `scoring/utility.py::benign_utility_rate` and `trace/queries.py::cost_summary_by_episode` reused unmodified as planned. `partial_compromise` needed no post-hoc backfill step (unlike S2-12) since `run_mcp_episode` already computes and writes it inline.
+- [x] Added the schema-path-vs-data-path comparison table (`_asr_by_defense`/`_comparison_table`): per-defense ASR from both trace DBs, restricted to the two models the MCP sweep and static sweep actually share (`llama3.2:3b`, `llama3.1:latest`) — the static sweep's Groq slice (S2-11) has no MCP-suite counterpart, so including it would compare different models, not different attack surfaces.
+- [x] Wrote the analysis section addressing the hypothesis directly, and it does **not** confirm it: every cell in the comparison table is `0.000` — no attack landed in *either* suite, for *any* defense, on either local model, so there's no signal for `spotlighting` (or anything else) to differentiate on. Stated plainly as a capability-ceiling null result (matching `results/static_baseline.md`'s own S2-12 finding and Appendix A.5's explicitly named risk), not dressed up as a finding it isn't. Also reported the secondary `partial_compromise` signal honestly, including the real confound found and documented in `docs/notes/mcp_suite.md` (a caught-and-fixed inaccuracy: the generated prose first mis-attributed the confound to `delete_file` for *both* affected sub-families — corrected to name each sub-family's actual shared tool, `delete_file` for `direct_instruction` and `send_email` for `fake_usage_note`, verified against the real `ExpectedCall`/ground-truth definitions before regenerating).
+- [x] Confirmed the acceptance criterion directly: ran the script twice against the same trace DBs and diffed the output with the timestamp line excluded — byte-identical.
+- [x] Commit left to the user, per this project's standing instruction not to run `git commit` unless explicitly asked.
 
 ---
 
@@ -98,7 +98,7 @@ This was the integration task — `sweep/runner.py::run_sweep`/`_run_point` prev
 
 - [x] No mock server makes a real network call — enforced by a test that fails if `socket` is touched (S3-01's runtime-level guard).
 - [x] Benign task completion on the MCP suite is ≥70% undefended — confirmed against the real S3-06 sweep: 80.0% (`llama3.2:3b`), 73.3% (`llama3.1:latest`).
-- [ ] Documented comparison: defense effectiveness on schema-path vs. data-path attacks — `results/mcp_suite.md` (S3-07).
+- [x] Documented comparison: defense effectiveness on schema-path vs. data-path attacks — `results/mcp_suite.md` (S3-07). Honest result: no differentiation was observable at all (ASR=0.000 everywhere on both suites for the local models used), documented as a capability-ceiling null result rather than a confirmed hypothesis.
 
 **Hypothesis to state up front (and let the data judge):** spotlighting and delimiting will underperform here because they mark untrusted *data*, while the poisoned content arrives as trusted *schema*.
 
