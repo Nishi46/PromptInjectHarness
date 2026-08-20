@@ -1,0 +1,67 @@
+# S6-02's composition sweep on the AgentDojo `workspace` suite. Same
+# models/tasks/attacks as `configs/static_sweep.yaml` (S2-11) --
+# `defenses:` lists the top-4 solo defenses (`docs/notes/composition.md`'s
+# D2 pick) plus all 8 composite pairs the same note's ordering-independence
+# analysis calls for (2 order-dependent pairs x both orderings, 4
+# order-independent pairs x one ordering each) -- and **deliberately writes
+# into that same `output.trace_db` path**: the `no_defense` rows (and now
+# also the 4 solo defenses' own rows) `static_sweep.yaml` already populated
+# become this sweep's comparison baselines for free. Every `defenses:`
+# entry here is new to this trace DB (none were ever run under a different
+# config hash), so there's no duplicate-benign-pass concern to reason about
+# the way Sprint 5's `dual_llm` reuse had.
+#
+# `spotlighting+guard_model` listed first: S6-02's own 1-trial adaptive
+# sanity check picks trial index 0, and needs to land on a `guard_model`-
+# involving composite -- the one real per-tool-result model-call overhead
+# among these defenses, structurally the same wall-clock risk category
+# Sprint 5's `dual_llm` was.
+
+name: composition_static_sweep
+
+models:
+  - id: L1
+    provider: ollama
+    model: llama3.2:3b
+    digest: sha256:a80c4f17acd5
+  - id: L2
+    provider: ollama
+    model: llama3.1:latest
+    digest: sha256:46e0c10c039e
+
+defenses:
+  - spotlighting+guard_model
+  - guard_model+spotlighting
+  - spotlighting
+  - instructional_prevention
+  - guard_model
+  - tool_allowlist
+  - spotlighting+instructional_prevention
+  - instructional_prevention+spotlighting
+  - spotlighting+tool_allowlist
+  - instructional_prevention+guard_model
+  - instructional_prevention+tool_allowlist
+  - guard_model+tool_allowlist
+
+suites:
+  - workspace
+
+attacks:
+  - null # benign pass -- utility tax for every composite/solo entry above
+  - naive
+  - ignore_previous
+  - important_instructions
+  - context_completion
+  - encoding_obfuscation
+
+tasks:
+  workspace:
+    - user_task_0
+    - user_task_1
+    - user_task_3
+
+injection_tasks:
+  workspace: injection_task_0
+
+output:
+  trace_db: runs/local/static_sweep/trace.db

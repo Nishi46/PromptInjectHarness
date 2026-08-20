@@ -1,0 +1,80 @@
+# S6-02's adaptive composition sweep on the MCP suite. Copy of
+# `configs/composition_adaptive_sweep.yaml`'s `defenses:` list, same
+# `output.trace_db` reuse decision (writes into
+# `runs/local/adaptive_mcp_sweep/trace.db`, alongside the existing
+# 6-defense adaptive trials there).
+#
+# `spotlighting+guard_model` listed first, same reason as the workspace
+# config's header comment.
+#
+# Grid arithmetic:
+#   12 defense entries x 4 sub-families x 2 models x 1 task = 96 trials
+#   96 trials x 20 rounds/trial (budget, before any early stop) = 1,920 episodes, worst case
+#   + up to 1 extra mutator LLM call per round that doesn't succeed
+#   + for the 5 `guard_model`-involving entries: 1 extra classifier call
+#     per tool result
+# Same ASR@1 == ASR@20 == 0.000 precedent as the workspace config's header
+# comment -- budget the full worst-case count.
+
+name: composition_adaptive_mcp_sweep
+
+models:
+  - id: L1
+    provider: ollama
+    model: llama3.2:3b
+    digest: sha256:a80c4f17acd5
+  - id: L2
+    provider: ollama
+    model: llama3.1:latest
+    digest: sha256:46e0c10c039e
+
+defenses:
+  - spotlighting+guard_model
+  - guard_model+spotlighting
+  - spotlighting
+  - instructional_prevention
+  - guard_model
+  - tool_allowlist
+  - spotlighting+instructional_prevention
+  - instructional_prevention+spotlighting
+  - spotlighting+tool_allowlist
+  - instructional_prevention+guard_model
+  - instructional_prevention+tool_allowlist
+  - guard_model+tool_allowlist
+
+suites:
+  - mcp
+
+attacks:
+  - direct_instruction
+  - fake_usage_note
+  - fake_precondition
+  - cross_tool_redirection
+
+tasks: {} # unused for the "mcp" suite (see mcp_tasks below); required key, kept empty
+
+mcp_tasks:
+  - mcp_file_storage_0
+  - mcp_ticketing_0
+  - mcp_crm_0
+  - mcp_calendar_0
+  - mcp_payments_0
+  - mcp_code_search_0
+  - mcp_analytics_0
+  - mcp_email_0
+  - mcp_messaging_0
+  - mcp_project_management_0
+  - mcp_hr_directory_0
+  - mcp_cloud_infra_0
+  - mcp_document_signing_0
+  - mcp_expense_reporting_0
+  - mcp_knowledge_base_0
+
+mcp_poisoned_cases:
+  direct_instruction: poison_direct_instruction_file_storage_list_files
+  fake_usage_note: poison_fake_usage_note_email_get_email
+  fake_precondition: poison_fake_precondition_payments_get_transaction
+  cross_tool_redirection: poison_cross_tool_redirection_crm_search_contacts
+
+output:
+  trace_db: runs/local/adaptive_mcp_sweep/trace.db
