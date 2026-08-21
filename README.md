@@ -127,12 +127,37 @@ them.
   contribute zero positives to it (the injection lives in a tool
   *description*, never a tool *result* — see
   [results/guard_model_roc.md](results/guard_model_roc.md)).
+- **One hosted-model result gap, left as a gap rather than papered over.**
+  `gemini-3.5-flash`'s attacked-pass data in the 6-model capability sweep
+  is `n/a`, not a fabricated `0.000` — its real free-tier cap turned out to
+  be 20 requests/day, discovered by hitting it live, and the attacked pass
+  never finished within budget (see
+  [results/model_sweep.md](results/model_sweep.md)).
+- **The retro process this project's own plan committed to wasn't actually
+  followed in real time.** `documentation/sprint_planning.md` calls for a
+  short written retro every Friday; none were written contemporaneously.
+  [docs/retros/synthesis.md](docs/retros/synthesis.md) is an honest
+  after-the-fact synthesis of the same real material, explicitly labeled
+  as such — not a substitute for the weekly discipline the plan called for.
+
+## Responsible use
 
 This benchmark's attack code (static attack families, the adaptive
 mutation loop, the MCP poisoning suite) is offensive-capable by design —
-that's what a red-team benchmark requires. It's built and published for
-defensive security research: evaluating and improving injection defenses,
-not for use against systems you don't have authorization to test.
+that's the point of a red-team benchmark; a defense-evaluation tool that
+can't actually attempt a compromise can't tell you anything about a
+defense. It's built and published for defensive security research:
+evaluating, comparing, and improving injection defenses in a fully
+synthetic, offline, no-real-data sandbox (mock MCP servers, AgentDojo's
+own simulated workspace tasks) — not for use against any system you don't
+have explicit authorization to test.
+
+This is an independent research/portfolio project without a formal
+security-disclosure program or dedicated contact address. If something
+here reveals a real, exploitable weakness in a third-party model or tool
+you don't control (as opposed to this benchmark's own mock environment,
+which is deliberately attackable by design), please report it to that
+provider directly rather than publishing it as a working exploit.
 
 ## License
 
