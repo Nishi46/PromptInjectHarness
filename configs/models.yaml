@@ -22,16 +22,16 @@ tiers:
   L3:
     role: "Upper local rung; slower, use for headline configs."
     source: ollama
-    model: null   # TODO: pick and pull an ~12-14B instruct Q4 model
-    digest: null
-    status: not_pulled
+    model: qwen2.5:14b   # S6-05: none of the already-pulled-but-unassigned models (llama3.1:latest, llama2:latest, mistral:latest) are in the ~12-14B range this tier targets, so pulled fresh. 14.8B params, Q4_K_M (confirmed via `ollama show`), genuine vendor/family diversity from the Llama-family L1/L2 -- and unlike them, Qwen2.5 is explicitly tuned for native tool-calling.
+    digest: sha256:7cdf5a0187d5   # short ID from `ollama list`, 2026-08-20 -- replace with full digest before relying on it for a reproducibility-critical run
+    status: pulled   # confirmed real native tool-calling via a live request, 2026-08-20
 
   L4:
     role: "Hosted mid-tier, different vendor."
     source: google_ai_studio
     model: gemini-3.5-flash   # current non-preview flash-class model as of 2026-08-16; hosted tiers aren't the reproducibility backbone (that's the local/digest-pinned track), so fine to bump when it's deprecated
     api_key_env: GOOGLE_AI_STUDIO_API_KEY
-    status: key_verified   # HTTP 200 on GET /v1beta/models, 2026-08-16
+    status: tool_calling_verified   # S6-05: confirmed real native tool-calling via a live POST generateContent request (GoogleAIStudioClient), 2026-08-20 -- still current, no repoint needed unlike L5's
 
   L5:
     role: "Large open-weight; top of the ladder. Non-negotiable for the headline config (Appendix A.5) — anchors the capability/vulnerability curve."
@@ -43,9 +43,9 @@ tiers:
   L6:
     role: "Vendor breadth on the headline config only. Appendix A calls this a 'rotating free model' by design — don't hardcode a pick here, just verify the key at signup time."
     source: openrouter
-    model: null   # TODO: choose per-sweep from the current :free catalog (17 free models available as of 2026-08-16, e.g. google/gemma-4-31b-it:free, nvidia/nemotron-3-nano-30b-a3b:free) — pick for tool-calling support at the time of the sweep, not now
+    model: nvidia/nemotron-3.5-lightning:free   # S6-05: picked from OpenRouter's live :free catalog at sweep time (per this tier's own "don't hardcode ahead of time" rule) -- confirmed real "tools" in supported_parameters, then confirmed real native tool-calling via a live POST /chat/completions request (OpenRouterClient), both 2026-08-20. Re-verify before reusing in a later sprint -- this is deliberately a rotating pick, not a pin.
     api_key_env: OPENROUTER_API_KEY
-    status: key_verified
+    status: tool_calling_verified
 
 # Already-pulled local models not currently assigned to a tier (available if L2/L3
 # picks change): llama3.1:latest (4.9GB), llama3.2:1b (1.3GB), llama2:latest (3.8GB),

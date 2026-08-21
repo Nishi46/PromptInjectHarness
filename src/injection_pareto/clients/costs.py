@@ -18,6 +18,12 @@ _RATES_PER_MILLION_TOKENS: dict[str, tuple[float, float]] = {
     # (console.groq.com/docs/model/openai/gpt-oss-120b).
     "openai/gpt-oss-120b": (0.15, 0.60),  # Groq
     "gemini-3.5-flash": (0.075, 0.30),  # Google AI Studio
+    # OpenRouter's `:free` suffix models are genuinely $0 -- not a modeled
+    # list price the way the two rates above are, an actual real rate.
+    # S6-05's L6 pick (`configs/models.yaml`); OpenRouter's own "rotating
+    # free model" framing (Appendix A.1) means this entry may need
+    # updating whenever L6's pick changes.
+    "nvidia/nemotron-3.5-lightning:free": (0.0, 0.0),  # OpenRouter
 }
 
 

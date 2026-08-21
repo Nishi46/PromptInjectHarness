@@ -1,0 +1,94 @@
+# S6-05/S6-06's "core config" -- the sprint plan's own name for the 6-model
+# capability-vulnerability sweep, spanning every tier in `configs/models.yaml`'s
+# ladder (L1-L6) for the first time in this project. `no_defense` only,
+# deliberately -- S6-06's own question ("does ASR rise with model
+# capability?") needs model as the sole varying axis; mixing in a defense
+# would confound capability with defense effectiveness, and this project's
+# per-defense numbers already live in `results/static_baseline.md`.
+#
+# `important_instructions` is the one attack family with a confirmed
+# non-zero ASR anywhere in this project so far (`no_defense`/L5,
+# `configs/static_sweep_groq_slice.yaml`, S2-11: ASR=0.333) -- the family
+# most likely to actually show a capability/vulnerability relationship
+# rather than another `0.000`-everywhere null result. Same 3 tasks every
+# other static sweep in this project uses (S2-11's own choice).
+#
+# **Deliberately writes into `configs/static_sweep.yaml`'s own trace DB**
+# (`runs/local/static_sweep/trace.db`): `no_defense` + `important_instructions`
+# (attacked and benign) already exists there for L1, L2, *and* L5 (S2-11's
+# own sweep plus `static_sweep_groq_slice.yaml`'s Groq slice) -- exactly
+# the same 3 tasks this config uses. This config still lists all 6 models
+# (so a future re-run of the *whole* file is self-contained and really
+# does span every tier), but resumability is keyed on this file's own
+# config hash (`sweep/runner.py::_config_hash`), which differs from
+# `static_sweep.yaml`'s/the Groq slice's -- running this file naively
+# would silently re-execute L1/L2/L5 too, spending real Groq quota on
+# episodes that already exist. S6-05 actually ran a config filtered to
+# just L3/L4/L6 at execution time (mirroring S5-02's identical "filter at
+# run time, keep the committed config the honest full grid" decision) --
+# see `docs/notes/model_sweep.md` for the exact command and why this is
+# the same acceptable, documented tradeoff (a later *full* re-run of this
+# file would re-execute L1/L2/L5 once more, which is fine -- they're $0 or
+# cheap regardless).
+#
+# Real new episodes this task actually ran: 3 models (L3/L4/L6) x 1
+# defense x 2 attacks x 3 tasks = 18, sized against Appendix A.2/A.3's
+# real constraints:
+#   - L3 (Ollama, local): no daily quota, only wall-clock -- the slowest
+#     of the three tiers here (14B vs. hosted), but 6 episodes is trivial
+#     regardless.
+#   - L4 (Google AI Studio): ~1,500 requests/day -- 6 episodes (a handful
+#     of requests each for multi-turn tool calling) is not a real
+#     constraint here.
+#   - L6 (OpenRouter): ~50 requests/day pre-credit -- 6 episodes x
+#     ~2-4 requests/episode is comfortably inside 50, but the tightest
+#     hosted budget in this config, so sampled first below.
+# L5 (Groq, the tightest budget in the whole project -- ~30 episodes/day,
+# ~100K tokens/day) needs zero new quota: its 6 episodes already exist.
+
+name: model_sweep
+
+models:
+  - id: L1
+    provider: ollama
+    model: llama3.2:3b
+    digest: sha256:a80c4f17acd5
+  - id: L2
+    provider: ollama
+    model: llama3.1:latest
+    digest: sha256:46e0c10c039e
+  - id: L3
+    provider: ollama
+    model: qwen2.5:14b
+    digest: sha256:7cdf5a0187d5
+  - id: L4
+    provider: google_ai_studio
+    model: gemini-3.5-flash
+  - id: L5
+    provider: groq
+    model: openai/gpt-oss-120b
+  - id: L6
+    provider: openrouter
+    model: nvidia/nemotron-3.5-lightning:free
+
+defenses:
+  - no_defense
+
+suites:
+  - workspace
+
+attacks:
+  - null # benign pass -- utility baseline per model
+  - important_instructions
+
+tasks:
+  workspace:
+    - user_task_0
+    - user_task_1
+    - user_task_3
+
+injection_tasks:
+  workspace: injection_task_0
+
+output:
+  trace_db: runs/local/static_sweep/trace.db
