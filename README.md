@@ -71,29 +71,35 @@ Every `results/*.md` file states in its own header exactly which script
 and trace DB(s) generated it — never hand-edited; rerun the script to
 refresh.
 
-A one-command `make reproduce` wrapper (a small, no-API-key, local-only
-sweep sized to actually finish on a stranger's laptop) is the next step on
-this project's own roadmap, not landed yet. Today, reproduce any table
-directly:
+Requires **Python 3.11+** specifically — check `python3 --version` first;
+on macOS the system `python3` is commonly older (3.9) and `pip install -e`
+will fail confusingly on this project's build backend if used by mistake.
+Use `pyenv`, `python3.11`, or whatever gets you a real 3.11+ interpreter.
 
 ```
-python3 -m venv .venv && source .venv/bin/activate
+python3.11 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 ollama pull llama3.2:3b
 ollama pull llama3.1:latest
 
-# Smallest possible real run, to confirm the harness works end to end:
-python -m injection_pareto run configs/smoke.yaml
-
-# The actual full config behind results/static_baseline.md (much larger —
-# every registered defense x every attack family x both local models):
-python -m injection_pareto run configs/static_sweep.yaml
-python scripts/generate_static_baseline.py
+make reproduce
 ```
+
+`make reproduce` runs `configs/static_sweep.yaml` (the exact config behind
+`results/static_baseline.md` — every registered local defense x every
+attack family x both local models, $0, no API keys) and regenerates that
+table from the resulting trace DB. Real, measured wall-clock: **7–10
+minutes** at the default concurrency — two independent live runs in clean
+checkouts, not a single estimate (`docs/notes/release.md`'s S7-04
+verification log). Re-running `make reproduce` a second time finishes in
+~3 seconds (config-hash resumability). `make smoke` runs a single episode
+first if you just want to confirm the harness works before committing to
+the full run.
 
 Hosted-provider results (Groq / Google AI Studio / OpenRouter) additionally
 need the matching API key from [.env.example](.env.example) — none of the
-local-model numbers above require one.
+local-model numbers above require one, and `make reproduce` never touches
+them.
 
 ## Limitations
 

@@ -177,3 +177,98 @@ either one, and don't assume composing two defenses is strictly additive
 either way: S6-03's own independence-formula work found the opposite can
 also happen (a composed pair *outperforming* the naive prediction), so
 neither direction should be assumed without checking the specific pair.
+
+## S7-04: `make reproduce`
+
+**E4's suggested `configs/headline.yaml` turned out not to be the right
+call -- reusing the existing `configs/static_sweep.yaml` is.** Checked
+before writing a new config, not assumed: `static_sweep.yaml` (S2-11) is
+*already* local-only (`L1`/`L2`, both `ollama`, both digest-pinned) --
+zero API keys needed, already satisfies E4's own constraint. It's also the
+literal config `results/static_baseline.md` was generated from
+(`generate_static_baseline.py`'s own default trace DB path matches
+`static_sweep.yaml`'s output path exactly). A brand-new, smaller
+`headline.yaml` would write into a *different*, incomplete trace DB --
+running `generate_static_baseline.py` against it would silently overwrite
+the real, full, committed `results/static_baseline.md` with a partial
+table missing `canary`/`dual_llm`/`capability_enforcement` and most tasks,
+corrupting the project's own real results file for anyone who ran `make
+reproduce` fresh. Reusing the real config sidesteps that failure mode
+entirely and needs no new config file at all.
+
+**Real wall-clock estimate, grounded in this project's own already-measured
+per-episode data, not guessed -- then independently confirmed live, twice.**
+`results/static_baseline.md`'s own "Cost & latency" table has real
+mean-episode-p95 numbers for every (defense, model) cell
+`static_sweep.yaml` populates (18 episodes/cell x 6 defenses x 2 models =
+216 episodes total). Summing (mean p95 x 18) across all 12 cells gives
+~1,577s of real, previously-measured sequential latency; divided by the
+CLI's own default `--concurrency 4` gives ~6.6 minutes wall-clock. Two
+independent live full runs in clean `git worktree`s (below) landed at
+**6:50 and 10:02** -- close to the extrapolation on the first, real
+variance (likely other load on this machine between runs, or plain local
+-inference variance) on the second. **Reported honestly as a range
+(~7-10 minutes), not a single cherry-picked number.**
+
+## S7-04's live verification log
+
+Real commands, run today against genuinely fresh `git worktree`s (no
+`runs/`/`.cache/`/`.venv` at all -- both gitignored, confirmed absent
+before starting) to confirm a stranger's actual experience matches what
+the README promises, not assumed from the config/Makefile alone.
+
+**Real bug found and fixed during this: `python3 -m venv` alone isn't
+safe advice on this machine.** The system `python3` resolved to 3.9.6 --
+this project requires 3.11+ (`pyproject.toml`). `pip install -e ".[dev]"`
+against a 3.9 venv fails with a confusing "setup.py not found... editable
+mode currently requires a setuptools-based build" error, not an obvious
+"wrong Python version" message. Fixed two ways: added `.python-version`
+(`3.11.8`, for `pyenv` users, matching this repo's own `.venv`) and made
+the README's own setup instructions explicit about needing 3.11+
+specifically, checked with `python3 --version` first.
+
+**Worktree 1** (`ollama` already warm from this session's own prior work):
+1. `git worktree add <tmp> HEAD --detach` -- confirmed `runs/`/`.cache/`
+   absent.
+2. `python3.11 -m venv .venv && ./.venv/bin/pip install -e ".[dev]"` --
+   succeeded once pointed at the real 3.11 interpreter.
+3. `make check-prereqs` -- passed silently (correct: all green).
+4. `make smoke` -- 1 real episode, completed in `00:03<00:00` per-episode
+   plus process overhead, ~9s wall total. First proof the mechanism works
+   end to end from a truly fresh trace DB.
+5. `make reproduce` -- **216/216 episodes completed, 0 failed. Real
+   wall-clock: 6:50.** `generate_static_baseline.py` ran successfully
+   against the fresh trace DB, wrote a real `results/static_baseline.md`
+   (60 security rows, 12 utility rows -- same shape as the committed one).
+6. Diffed the worktree's fresh table against the committed
+   `results/static_baseline.md`: real, *expected* differences -- some
+   per-defense utility rates differ (agent behavior against a live local
+   model isn't bit-for-bit deterministic across runs; e.g. `canary`/
+   `guard_model`/`instructional_prevention` utility rates on this run vs.
+   the committed one), and the committed file's `no_defense`/
+   `openai/gpt-oss-120b` (L5/Groq) row is correctly *absent* from the
+   worktree's version -- `make reproduce` never touches a paid provider,
+   exactly as documented. Neither difference is a bug; both are the
+   honest, expected shape of "reproducible mechanism, not byte-identical
+   output" for a suite involving live model sampling.
+
+(Worktree 1 was lost mid-verification when this session's scratchpad
+directory was cleared between turns -- not a bug in the harness itself,
+just this environment's own temp-directory lifecycle. Redone below rather
+than reported from memory.)
+
+**Worktree 2** (fresh, independent of worktree 1): repeated steps 1-2
+identically, then ran `make reproduce` twice back to back in the same
+worktree, specifically to test idempotency (the checklist's own explicit
+ask, `sweep/runner.py::_config_hash` resumability):
+- **First run: 216/216 completed, 0 failed, wall-clock 10:02** -- slower
+  than worktree 1's 6:50, a real, honest data point, not reconciled away
+  (see the range reported above).
+- **Second run, immediately after, same trace DB: `0 completed, 216
+  already done (resumed), 0 failed` -- wall-clock 2.7 seconds.**
+  Resumability works exactly as designed: a second `make reproduce`
+  doesn't silently re-spend ~7-10 minutes of local compute it doesn't
+  need to.
+
+Both worktrees removed (`git worktree remove`) after verification --
+nothing left behind in this machine's own real, accumulated trace DBs.
