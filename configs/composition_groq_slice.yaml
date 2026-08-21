@@ -1,0 +1,62 @@
+# S6-03's targeted L5 (Groq) composition slice. Local-model composition
+# data (S6-02) is uninformative for the independence question -- every
+# defense ties at ASR=0.000 against `llama3.2:3b`/`llama3.1:latest`, static
+# and adaptive, both suites (`docs/notes/composition.md`'s S6-02 run log)
+# -- so there is no non-zero ASR anywhere to test "does composing
+# underperform independence" against. `important_instructions` against L5
+# (`openai/gpt-oss-120b`) is the one attack/model combination in this
+# entire project with a confirmed non-zero ASR
+# (`configs/static_sweep_groq_slice.yaml`, S2-11: `no_defense` scored
+# ASR=0.333, 1/3 tasks) -- reused here as the only place a real
+# "composing changed the outcome" signal could show up at all.
+#
+# Deliberately small (5 defenses x 1 attack x 3 tasks = 15 episodes, no
+# benign pass -- this slice is a pure security-signal experiment, not a
+# utility measurement, so it doesn't need one) to stay well under Groq's
+# ~30 episodes/day free-tier budget (Appendix A.3) alongside the existing
+# `no_defense` slice's 3 attacked episodes already in the trace DB.
+#
+# Only 3 of the top-4 solo defenses (`spotlighting`, `instructional_prevention`,
+# `tool_allowlist`) plus 2 composed pairs -- `guard_model` is deliberately
+# left out of this slice: its `on_tool_result` `BLOCK` is a documented
+# no-op (`guard_model.py`), and it never mutates content either, so any
+# pair including it is architecturally guaranteed to have the exact same
+# ASR as running its other member alone (nothing about a no-op,
+# non-mutating member can change what tool call actually executes) --
+# spending scarce Groq quota confirming that empirically wouldn't add
+# information the code already guarantees. `spotlighting+instructional_prevention`
+# and `instructional_prevention+tool_allowlist` are the two composed pairs
+# tested: the one pair with a real (not just no-op) shared-hook interaction,
+# and a soft-dissuasion-plus-hard-block pairing respectively.
+
+name: composition_groq_slice
+
+models:
+  - id: L5
+    provider: groq
+    model: openai/gpt-oss-120b
+
+defenses:
+  - spotlighting
+  - instructional_prevention
+  - tool_allowlist
+  - spotlighting+instructional_prevention
+  - instructional_prevention+tool_allowlist
+
+suites:
+  - workspace
+
+attacks:
+  - important_instructions
+
+tasks:
+  workspace:
+    - user_task_0
+    - user_task_1
+    - user_task_3
+
+injection_tasks:
+  workspace: injection_task_0
+
+output:
+  trace_db: runs/local/static_sweep/trace.db
