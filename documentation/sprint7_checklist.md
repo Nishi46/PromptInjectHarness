@@ -1,0 +1,116 @@
+# Sprint 7 Checklist — Analysis & Release (E7)
+
+Granular sub-steps for each task in Sprint 7 of [sprint_planning.md](sprint_planning.md). Check items off as you go; each should produce a concrete artifact (a file, a passing test, a committed config/result/image). Ordered to respect the `Deps` column — work top to bottom. Grounded in the current repo state as of the end of Sprint 6 (`results/*.md`, `docs/notes/*.md`, `configs/models.yaml`, `src/injection_pareto/__main__.py`, `.gitignore`, and the total absence of `README.md`/`Makefile`/`LICENSE`/`docs/retros/`) — reread the relevant ones before starting each task. **Never cut S7-01** (sprint plan's own explicit "carries the entire thesis" list); if behind, cut S7-05 first (the plan's own global cut list, item 5).
+
+> **Read this before writing any code.** Six real gaps turned up auditing the current repo against what Sprint 7 needs — most of them because Sprint 7 is the first time this project has had to face an audience other than itself. Get these right before S7-01 starts.
+
+## Implementation decisions for this project's Sprint 7
+
+**E1 — S7-01's Pareto plot is specified as "adaptive ASR × utility retention," but adaptive ASR has zero dynamic range anywhere in this project's real data.** Checked directly, not assumed: `results/adaptive.md`'s full ASR@20 table — every suite, every one of 6 defenses, every attack family, both local models — is **0.000 in all 116 rows**. `docs/notes/adaptive_attacks.md` already says this plainly ("0/60 trials achieved a security compromise... matches every other local-model finding this project has produced"). Hosted models (where non-zero ASR exists at all) were never run through the adaptive loop — cost-prohibitive, per every prior sprint's Groq-quota notes. So there is no real data anywhere that is simultaneously *adaptive* and *ASR-varying*: plotting the literal spec produces every point stacked at x=0, a real but visually and analytically useless "frontier."
+
+**Decision:** two clearly-separated panels/figures, not one plot silently substituting one population for the other:
+1. **The honest adaptive panel**, exactly as specified, showing the real null result at face value — every defense's point at ASR@20=0.000. This *is* a real finding (worth stating in prose next to the plot: 20 rounds of LLM-driven mutation found nothing that static evaluation had already blocked, locally), not a placeholder to apologize for.
+2. **A static, single-hosted-model panel** built from the one place real ASR variation exists in this project: `configs/composition_groq_slice.yaml`'s L5 (`openai/gpt-oss-120b`) data in `results/composition.md` (5–8 defenses × `important_instructions`, ASR range 0.000–0.333, n=3/cell) plus that model's solo-defense utility/cost numbers. Labeled explicitly as static/single-model/small-n — never presented as satisfying the "adaptive" framing it isn't.
+
+Both panels pull real numbers from real trace-DB-derived `results/*.md` tables — never hand-typed.
+
+**E2 — No plotting dependency exists yet.** `pyproject.toml` has no `matplotlib`/`plotly`/anything chart-capable — this project's whole prior stats work (`spearman_rho`, `_percentile`, ROC/AUC) deliberately hand-rolled math to avoid a `scipy` dependency, but a *rendered bubble chart with a highlighted frontier, axis labels, and a legend* is a different kind of task than a correlation coefficient. Hand-rolling SVG bubble-chart rendering (positioning, scaling, frontier-line drawing, text layout) is a lot of finicky, low-value code for a one-off artifact.
+
+**Decision:** add `matplotlib` as a real, deliberate new dependency for this task specifically — document the choice in `docs/notes/release.md` (new) as an explicit exception to the no-new-dependency precedent, not a silent drift from it. Pin the version in `pyproject.toml` the same way every other dependency already is.
+
+**E3 — No `README.md`, `Makefile`, or `LICENSE` exist anywhere in this repo.** Sprint 7 is building all three from a blank slate, not editing existing ones — size S7-03/S7-04 estimates accordingly. More importantly: **S7-05 (dataset release with a datasheet) and S7-03 (README, which per Appendix A.6 should state the reproducibility argument as a design choice) both implicitly assume a license exists**, and picking one is a real decision with actual legal/redistribution consequences for the user's own project, not something to default silently (e.g., to MIT) without asking. **Decision:** treat "what license, if any" as an explicit question to the user at the point S7-03 or S7-05 first needs it — not resolved in this checklist, and not blocking every other task (most of Sprint 7 doesn't need it).
+
+**E4 — "The headline config" (S7-04's own task name) is not defined anywhere in this repo, and a stranger's clean clone starts with genuinely zero data.** Confirmed via `.gitignore`: both `runs/` (trace DBs) and `.cache/` (response cache) are explicitly gitignored as "regenerable, not source." So `make reproduce` cannot just re-run `generate_*.py` scripts against pre-existing traces the way every `results/*.md` file's own header implies for *this* development machine — for a stranger, there is nothing to query yet. It has to actually execute a real sweep from scratch.
+
+Two real constraints on what that sweep can be, both already established by prior sprints, not new: (a) Appendix A.6's own README language ("open-weight models pinned by digest... `make reproduce` regenerates every table from scratch") commits to **no API keys required** — so it must be restricted to `configs/models.yaml`'s L1/L2/L3 (all `ollama`, all digest-pinned) tiers only, never L4–L6; (b) it has to be small enough to actually finish on a stranger's laptop in a reasonable window, not this project's full multi-sprint grid (hundreds of episodes across 7 sprints of accumulated configs).
+
+**Decision:** the first concrete sub-step of S7-04 is defining a new, small, purpose-built config (e.g. the top-4 defenses from S6-01/D2 × `no_defense` baseline × 1–2 attack families with real signal × L1/L2 × a handful of tasks) sized against `configs/*sweep*.yaml`'s own real wall-clock numbers already recorded in this project's docs/notes (S4-05/S5-05 established the "sample-and-extrapolate before committing" discipline — reuse it here for the headline config's own sizing, don't skip it just because this is a release task).
+
+**E5 — This project's own standing process rule was never followed, and Sprint 7 needs its output.** `sprint_planning.md`'s own ritual ("Friday: 20-minute written retro in `docs/retros/`... those retro notes become your blog post outline") has produced **zero files in `docs/retros/`** across all of Sprints 0–6 — the directory doesn't exist. S7-06 (blog post) directly depends on this raw material per the plan's own words. Real, honest gap, not busywork to backfill for its own sake.
+
+**Decision:** don't try to reconstruct 7 sprints of Friday retros after the fact with invented specificity. Instead, S7-06's first sub-step is a lightweight synthesis pass over what genuinely does exist and *is* retro-quality material — the "Implementation decisions"/D-sections and real-bug/real-finding write-ups already scattered through `docs/notes/*.md` (composition.md's S6-04 finding, adaptive_attacks.md's null result, model_sweep.md's three real client bugs, guard_model_roc.md's AUC discrepancy, etc.) — pulled into one place, not fabricated as if weekly retros had happened.
+
+**E6 — Claim C1 ("show the static ranking is misleading," Sprint 4's own stated goal) has no numeric evidence for the literal claim anywhere in this project's real data.** E1 already establishes why: adaptive ASR@20 is 0.000 everywhere locally, and static ASR is *also* 0.000 for every defense against the local models (every `results/static_baseline.md` row) — there is no static ranking with any spread for adaptive refinement to have overturned. The precondition for "misleading" (a defense that *looks* safe under static testing but *isn't* under adaptive pressure) never occurred in this project's real measurements.
+
+**Decision:** S7-02 and S7-06 must frame C1 through the evidence that actually exists, not force the originally-imagined one: (a) S6-04's real, named qualitative finding — composing `spotlighting` ahead of `guard_model` measurably degrades the guard's classification input in every one of 7 real matched pairs, a genuine "the composed system is worse than either layer suggests" result, just not visible in ASR because `guard_model`'s block is a no-op today; and (b) the null adaptive result's own honest meta-finding, stated plainly: this project's local models are already so unreliable at tool-calling (per every sprint's "near-zero dynamic range" note) that static and adaptive measurement agree completely — there was no daylight between them for a ranking to be misleading about. This is a more modest, more honest claim than the plan originally assumed provable, and Sprint 7's writing should say so directly rather than paper over it.
+
+---
+
+## S7-01 — Pareto plot (3h) 🔴 — deps: S6-02 — **never cut**
+
+- [x] Create `docs/notes/release.md`; record E1's two-panel decision and E2's matplotlib decision there before writing any plotting code. **Two more real gaps found and resolved while actually pulling the data, both documented there**: adaptive trials measure no utility at all (pure attacked-episode budget search, S4-03), and the L5 composition slice has benign utility for exactly one defense (`no_defense`) — resolved by using this project's local-model benign utility rate as the Y axis for *both* panels, explicitly labeled as a deliberate cross-population choice.
+- [x] Add `matplotlib` to `pyproject.toml` (pinned version, matching the existing dependency style); confirm `.venv` installs cleanly. Added `matplotlib>=3.9`; installed cleanly (3.11.1).
+- [x] Write `scripts/generate_pareto_plot.py`: pulls (defense, ASR, benign utility, mean $/episode) rows two ways — (1) the adaptive panel, querying `runs/local/adaptive_sweep/trace.db`/`adaptive_mcp_sweep/trace.db` the same way `generate_adaptive_results.py` does (or importing its row-producing functions via the same `importlib`-from-file-path technique the test suite already uses, since `scripts/` isn't a package); (2) the static L5 panel, querying `runs/local/static_sweep/trace.db` filtered to `model = 'openai/gpt-oss-120b'`, reusing `results/composition.md`'s own defense set. Never hand-transcribe a number from an existing `results/*.md` file — requery the trace DB directly, same discipline as every prior `generate_*.py` script. **Scoped to the workspace suite only** (both panels), documented in `docs/notes/release.md` — pooling with MCP would blend two structurally different injection mechanisms (S6-07's own finding), the same reasoning composition/S6-07 already applied.
+- [x] Write a small, tested `pareto_frontier(points) -> list[Point]` function (non-dominated set: a point is on the frontier iff no other point has both lower-or-equal ASR *and* higher-or-equal utility, strictly better in at least one) — don't eyeball the frontier by hand on the chart.
+- [x] Render both panels via `matplotlib`: X=ASR (lower is better), Y=benign utility retention, bubble size=mean $/episode, frontier points highlighted/connected, defense names labeled. Output `results/pareto.png` (or `.svg` — decide based on which renders better in a GitHub-flavored README, since S7-03 embeds this). **Picked PNG** (renders directly in GitHub markdown without extra config). Real label-overlap issue found on first render (several defenses genuinely tie on (ASR, utility)) — fixed by stacking labels for tied points and wrapping long composite (`a+b`) names onto a second line, not by hiding or averaging away the real ties.
+- [x] Write `results/pareto.md`: what's plotted, exact data provenance (which trace DB, which filter, n per point), and the panel-1-vs-panel-2 caveat from E1 stated plainly next to the numbers, not just in `docs/notes/release.md`.
+- [x] Unit tests for `pareto_frontier()` against fake point fixtures with known expected frontiers (dominated points correctly excluded, ties handled, single-point/empty-input edge cases). 7 tests in `tests/test_pareto_plot.py`, including one pinned to this project's real panel-1 data shape.
+- [x] Reproducibility check: regenerate the plot twice, confirm the underlying data/frontier computation is byte-identical (the PNG's own metadata bytes may not be — diff the frontier point list / a saved data dump instead, not the image bytes literally). **Both `results/pareto.md` (excluding the timestamp line) and the PNG's own bytes (md5) came out byte-identical across two runs** — no metadata-timestamp issue in practice with this matplotlib version/backend.
+- [x] `ruff check .`, `mypy .`, full `pytest` suite clean.
+
+## S7-02 — Defense selection guide (2h) 🔴 — deps: S7-01
+
+- [ ] Decide the numbers-vs-judgment split up front (S6-06's own precedent): pull every defense's static ASR (best available per-model), utility tax (`results/static_baseline.md`/`architectural_defenses.md`), and mean $/episode via a small script (`scripts/generate_selection_guide.py`) into `results/selection_guide.md`'s table; keep the "when to use / when to avoid" recommendation text — genuine judgment, not derivable from a query — in `docs/notes/release.md` or inline as clearly-marked prose, not presented as script output.
+- [ ] Explicitly fold in S6-04's composition caveat (E6) as its own guide row/footnote: "`guard_model` composed after `spotlighting` — real degraded classification signal, S6-04" — this is exactly the kind of fact a selection guide exists to surface, not bury in `docs/notes/composition.md` alone.
+- [ ] Cross-check every recommendation against the real cost/latency numbers (`results/architectural_defenses.md`'s `dual_llm` vs. `capability_enforcement` asymmetry is a real, concrete "structurally $0 vs. real per-call cost" distinction worth stating in the guide, not just the retro notes).
+- [ ] `ruff check .`, `mypy .`, full `pytest` suite clean (if a script was added).
+
+## S7-03 — README (3h) 🔴 — deps: S7-02
+
+- [ ] Resolve the LICENSE question with the user first (E3) if the README is going to state one in its footer — don't silently pick.
+- [ ] Structure per the sprint plan's own acceptance criterion, in order: results first (embed `results/pareto.png`, state the reframed C1/C2/C3 claims from E1/E6 plainly, one headline number above the fold), method second (harness architecture in a few sentences + link to `documentation/sprint_planning.md` for depth), reproduction third (`make reproduce` usage).
+- [ ] Include Appendix A.6's own suggested reproducibility paragraph (adapt, don't invent a different framing): open-weight models pinned by digest, `make reproduce` regenerates every table from scratch, no API keys required for the headline config.
+- [ ] Link to `results/selection_guide.md`, `docs/notes/` for anyone wanting the full trail, and the Limitations section (S7-08).
+- [ ] Verify every internal link/image path resolves from a clean checkout (relative paths only).
+
+## S7-04 — `make reproduce` (2h) 🔴 — deps: S1-05
+
+- [ ] Resolve E4 first: define and commit the new small, L1/L2/L3-only, wall-clock-sized headline config (`configs/headline.yaml` or similar) — sample-and-extrapolate its real wall-clock time before committing to the final task/attack/defense count, the same discipline S4-05/S5-05 already established.
+- [ ] Write `Makefile` with (at minimum) a `reproduce` target: `.venv` setup check, `python -m injection_pareto run configs/headline.yaml`, then the relevant `generate_*.py` scripts to refresh the tables the headline config actually populates data for.
+- [ ] Confirm idempotency: running `make reproduce` twice in a row is fast the second time (sweep runner's own config-hash resumability, `sweep/runner.py::_config_hash`, already provides this — verify it actually holds for the new config rather than assuming).
+- [ ] Document the real, measured wall-clock time and confirm $0 (no API keys needed) in both the Makefile's own comment and the README's reproduction section.
+- [ ] Test in as close to a clean-checkout state as is safe (e.g. a throwaway clone or `git worktree`, not deleting this machine's real accumulated trace DBs) — confirm a stranger's actual experience matches what the README promises.
+
+## S7-05 — MCP dataset release (2.5h) 🟡 — deps: S3-04 — **first to cut if behind**
+
+- [ ] Export the real 41 `PoisonedCase` entries (`src/injection_pareto/mcp/poisoned.py`) plus their paired tasks (`mcp/tasks.py`) to a clean, self-describing format (JSON/JSONL) — a script, not a one-off hand export, so it can be regenerated if the case set changes.
+- [ ] Write a datasheet following the standard "Datasheets for Datasets" sections (motivation, composition, collection process, preprocessing, uses, distribution, maintenance) — grounded in this project's real design decisions (S3-01 through S3-05's own notes), not generic boilerplate.
+- [ ] Resolve the LICENSE/redistribution-terms question (E3) — required before any public dataset release, not optional here.
+- [ ] **Publishing to HuggingFace is an external, hard-to-reverse action** (creates a public, indexed artifact under the user's account) — confirm explicitly with the user before actually pushing, even once everything above is ready. Prepare the upload; don't execute it unprompted.
+
+## S7-06 — Blog post (4h) 🔴 — deps: S7-02
+
+- [ ] Do E5's lightweight retro-synthesis pass first — pull the real decisions/findings/bugs already documented across `docs/notes/*.md` into one chronological or thematic source-material file, honestly labeled as a retrospective synthesis, not fabricated weekly retros.
+- [ ] Draft leading with the three claims (E6's honestly-reframed C1/C2/C3), each backed by a specific real number or figure already in `results/`, not the harness's own architecture — architecture comes after, per the sprint plan's own explicit framing ("lead with the three claims, not the architecture").
+- [ ] Include at least one real "found a bug, root-caused it, fixed it" story (plenty of real candidates: the Gemini `thoughtSignature` bug, the guard-model AUC tie-cliff, the YAML-reflow substring-matching fix) — this project's own real debugging narrative is more compelling than a results table alone, and it's genuine, not embellished.
+- [ ] Leave the actual publishing destination/timing to the user — this task produces the draft content, not a "publish" action.
+
+## S7-07 — 60-second demo GIF (1.5h) 🟡 — deps: S5-03
+
+- [ ] Pick one real episode pair from existing trace data: an attack succeeding against `no_defense` and the same (or an equivalent) attack blocked by `capability_enforcement` (D8) — query the trace DB for a real matched pair, don't stage a synthetic one.
+- [ ] Decide the recording mechanism (no existing tooling in this repo for this) — e.g. a small script that replays the two episodes' real recorded steps/tool_calls to a terminal at a readable pace, captured with a screen-recording tool, vs. a live re-run. Prefer replaying *real recorded trace rows* over a live re-run, so the GIF is guaranteed to show the actual documented episodes, not a fresh (possibly different) live result.
+- [ ] **Recording/publishing a GIF is an external-facing artifact** — review the final output with the user before it's included anywhere public-facing (README, blog post).
+
+## S7-08 — Limitations + responsible-disclosure section (1.5h) 🔴 — deps: none
+
+- [ ] Name at least the 4 weaknesses the sprint plan's own acceptance criterion requires (budget-limited adaptivity, mock environments, model version drift, single-attacker-model bias) — each grounded in a real, specific fact from this project's own data, not generic hedging.
+- [ ] Add this project's own additional real limitations already surfaced across Sprints 4–6, honestly, since they're genuinely load-bearing: local-model near-zero dynamic range compressing most security findings (E1/E6); L4's quota-blocked attacked-pass gap (S6-05); the guard-model ROC's tiny true-positive class (n=15, S6-07); the `docs/retros/` gap itself (E5) as a process limitation, not just a technical one.
+- [ ] Write a short responsible-disclosure/dual-use statement: the MCP poisoning suite and attack-family code are offensive-capable by design (that's the point of a red-team benchmark) — state the intended defensive-research use plainly, consistent with how this project has operated throughout (IMPORTANT: this is a documentation task, not a request to change how the code itself behaves).
+- [ ] Link this section from the README (S7-03).
+
+## S7-09 — Resume bullets (0.5h) 🟡 — deps: S7-02
+
+- [ ] Draft 3–5 bullets using only real final numbers already sitting in `results/*.md` (e.g. the L6-highest-ASR capability finding, the Mann-Whitney guard-model AUC, the composition blind-spot mechanism, the 6-model/2-provider client work) — pure synthesis, no new data needed.
+- [ ] Cross-check every number against its source file at draft time (results tables can be regenerated between now and when these bullets get used — don't let them silently drift stale).
+
+---
+
+## Acceptance criteria (from sprint_planning.md)
+
+- [ ] A stranger can reproduce the headline table from a clean clone — tested for real (E4/S7-04), not assumed from the Makefile existing.
+- [ ] README's first screenful contains a number, a chart, and the three claims — the reframed, honest versions from E6, not the plan's original assumed framing.
+- [ ] Limitations section names at least four honest weaknesses (budget-limited adaptivity, mock environments, model version drift, single-attacker-model bias) — S7-08.
+
+**Cost risk.** Still $0 by construction (E4 restricts the headline config to local, digest-pinned models) — the real risk here is wall-clock and scope, not spend: a headline config sized wrong (too large) makes `make reproduce` fail its own promise for a stranger with a laptop, not this project's own already-warmed-up dev machine.
+
+**Scope risk, restated plainly:** S7-01's real scope now includes resolving E1 and E2 before any plotting code is written — both are genuine judgment calls the original "3h" estimate didn't anticipate needing (the sprint plan assumed adaptive ASR data with real variation would exist by Sprint 7; it doesn't). If time is tight, the plan's own cut list order applies (S7-05 dataset release first, since it's marked 🟡 and explicitly listed as cut-first) — but never cut S7-01 itself, per the plan's own "carries the entire thesis" line, and don't let panel 2's real (if small-n) data quietly disappear in a rush — that's the only place in this whole project a security Pareto frontier with actual spread exists.

@@ -12,6 +12,7 @@ dependencies = [
     "requests>=2.31",
     "pyyaml>=6.0",
     "tqdm>=4.66",
+    "matplotlib>=3.9",
 ]
 
 [project.optional-dependencies]
