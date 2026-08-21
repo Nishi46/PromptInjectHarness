@@ -5,7 +5,10 @@
 ### E1's two-panel decision, confirmed and refined against the real data
 
 `documentation/sprint7_checklist.md`'s E1 already established that adaptive
-ASR@20 is `0.000` in all 116 real rows (`results/adaptive.md`) -- no
+ASR@20 is `0.000` in all 108 real (suite, defense, attack family, model)
+cells (`results/adaptive.md`, 360 underlying trials total -- recounted
+directly from the trace DBs, not eyeballed off the earlier "116" estimate,
+which was wrong) -- no
 dynamic range to plot on an "adaptive ASR" axis. Two more real gaps turned
 up while actually pulling the data, both resolved here rather than
 discovered mid-script:

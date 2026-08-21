@@ -1,7 +1,8 @@
 """S7-01 -- the Pareto plot: security (ASR) x utility retention x cost
 ($/episode). See `docs/notes/release.md` for why this is two panels, not
 one plotting the sprint plan's own literal "adaptive ASR" spec -- adaptive
-ASR@20 is `0.000` in all 116 real rows this project has ever measured
+ASR@20 is `0.000` in all 108 real (suite, defense, attack family, model)
+cells this project has ever measured (360 underlying trials)
 (`results/adaptive.md`), so panel 1 is that honest null result, and panel 2
 substitutes the one place real ASR variation exists (`openai/gpt-oss-120b`
 via `configs/composition_groq_slice.yaml`), both explicitly labeled. Both
