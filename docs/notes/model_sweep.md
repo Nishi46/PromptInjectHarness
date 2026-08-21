@@ -145,3 +145,54 @@ the thing to watch for. S6-06 does the real statistical treatment
 (rank correlation, honest caveats about `n=3`-per-cell sample size); this
 is the raw, real numbers it will read from the trace DB, recorded here
 first.
+
+## S6-06: does ASR actually rise with capability tier?
+
+`scripts/generate_capability_vulnerability_results.py` -> `results/model_sweep.md`
+does the real statistical treatment on the numbers recorded just above:
+Spearman rho between ladder position (L1=1 .. L6=6) and attacked ASR on
+the one cell with real dynamic range (`no_defense`/`important_instructions`),
+using the hand-rolled rank-correlation machinery `generate_adaptive_results.py`
+already established (Pearson-of-ranks, ties averaged -- no scipy/numpy,
+this project's standing precedent).
+
+**The number: rho = 0.894 (n=5, L4 excluded -- quota-blocked, not a
+confirmed `0.000`).** Read at face value, that is a strong positive
+correlation and would replicate Appendix A.5's MCPTox-style finding: more
+capable models get compromised more often by this attack family. Benign
+utility correlates with tier almost identically (rho = 0.878, n=6) --
+more capable models also complete the underlying task more reliably, the
+expected other half of the same story.
+
+**But the honest caveat Appendix A.5 itself names is real here, not just a
+hypothetical risk to flag defensively.** Of the 5 tiers with attacked-pass
+data, 3 (L1, L2, L3 -- every local model this project has ever run) are
+tied at exactly `0.000`. A Spearman correlation over a vector with three
+tied zeros and two distinct positive values isn't really measuring "does
+ASR climb smoothly with capability" -- it's measuring "do the hosted
+models differ from the local models," which is a real and worth-reporting
+finding, but a coarser one than "monotonic in tier" implies. The *only*
+place in this data where tier order and ASR both vary continuously is the
+L5 -> L6 step (0.333 -> 0.667), and that comparison is a single ordinal
+pair at `n=3` episodes per cell -- one flipped episode moves either
+number by 0.333, so this one data point is not strong evidence of a
+smooth within-hosted-tier gradient on its own, just consistent with one.
+
+**Verdict, reported plainly rather than rounded up to "confirmed" or down
+to "no effect":** this project's data is consistent with the MCPTox
+direction and does not contradict it, but the honest description of what
+was actually measured is "every local model tested so far has a
+measured ASR of zero against this attack family, and every hosted model
+tested so far has a nonzero one" -- a real, load-bearing local/hosted
+split -- rather than "ASR climbs step-by-step with capability tier,"
+which the data doesn't have enough within-tier resolution to support yet.
+L1-L3's near-zero ASR compressing the range (the exact risk Appendix A.5
+flags) is very plausibly what's happening: these are 3B-14B local models
+that have shown almost no dynamic range on *any* attack family in any
+prior sprint, not because they're uniquely well-defended but because
+they struggle to reliably invoke tools at all (S1-08, S2-11's own notes).
+A rerun with a wider attack surface (more attack families, more episodes
+per cell) or once L4's quota-blocked cell fills in would be needed to
+tell "genuinely flat at zero" apart from "just not enough episodes to see
+the rare success" for the local tier -- this sprint's budget doesn't
+support that rerun.
